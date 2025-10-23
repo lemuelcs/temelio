@@ -1,32 +1,32 @@
 // frontend/src/components/disponibilidade/TabelaResumo.tsx
-import { TurnoDisponibilidade, TipoVeiculo } from '../../types/disponibilidade';
-import { getIconeTurno } from '../../utils/disponibilidade.utils';
+import { CicloRota, TipoVeiculo } from '../../types/disponibilidade';
+import { getIconeCiclo, getTituloCiclo, getDescricaoCiclo } from '../../utils/disponibilidade.utils';
 
-interface ResumoTurno {
+interface ResumoCiclo {
   [key: string]: number[];
   subtotal: number[];
 }
 
 interface TabelaResumoProps {
   resumo: {
-    turnos: {
-      [TurnoDisponibilidade.MATUTINO]: ResumoTurno;
-      [TurnoDisponibilidade.VESPERTINO]: ResumoTurno;
-      [TurnoDisponibilidade.NOTURNO]: ResumoTurno;
+    ciclos: {
+      [CicloRota.CICLO_1]: ResumoCiclo;
+      [CicloRota.CICLO_2]: ResumoCiclo;
+      [CicloRota.SAME_DAY]: ResumoCiclo;
     };
     totalGeral: number[];
   };
   datas: Date[];
-  onClickCelula: (data: string, turno: TurnoDisponibilidade, tipoVeiculo: TipoVeiculo) => void;
+  onClickCelula: (data: string, ciclo: CicloRota, tipoVeiculo: TipoVeiculo) => void;
 }
 
 export function TabelaResumo({ resumo, datas, onClickCelula }: TabelaResumoProps) {
   const diasSemana = ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SÁB'];
 
-  const turnos = [
-    { key: TurnoDisponibilidade.MATUTINO, label: 'MATUTINO', horario: '8h-12h' },
-    { key: TurnoDisponibilidade.VESPERTINO, label: 'VESPERTINO', horario: '13h-17h' },
-    { key: TurnoDisponibilidade.NOTURNO, label: 'NOTURNO', horario: '18h-22h' }
+  const ciclos = [
+    { key: CicloRota.CICLO_1 },
+    { key: CicloRota.CICLO_2 },
+    { key: CicloRota.SAME_DAY }
   ];
 
   const veiculos = [
@@ -61,7 +61,7 @@ export function TabelaResumo({ resumo, datas, onClickCelula }: TabelaResumoProps
           <thead>
             <tr className="bg-gradient-to-r from-blue-600 to-blue-700 text-white">
               <th className="px-4 py-3 text-left font-semibold text-sm w-48 sticky left-0 bg-blue-600">
-                Turno / Veículo
+                Ciclo / Veículo
               </th>
               {diasSemana.map((dia, index) => (
                 <th key={index} className="px-3 py-3 text-center font-semibold text-sm">
@@ -78,19 +78,19 @@ export function TabelaResumo({ resumo, datas, onClickCelula }: TabelaResumoProps
           </thead>
 
           <tbody>
-            {turnos.map((turno, turnoIndex) => (
-              <React.Fragment key={turno.key}>
-                {/* Header do turno */}
+            {ciclos.map((ciclo, cicloIndex) => (
+              <React.Fragment key={ciclo.key}>
+                {/* Header do ciclo */}
                 <tr className="bg-gray-100 border-t-2 border-blue-500">
                   <td
                     colSpan={9}
                     className="px-4 py-3 font-bold text-gray-900 sticky left-0 bg-gray-100"
                   >
                     <div className="flex items-center gap-2">
-                      <span className="text-2xl">{getIconeTurno(turno.key)}</span>
-                      <span>{turno.label}</span>
+                      <span className="text-2xl">{getIconeCiclo(ciclo.key)}</span>
+                      <span>{getTituloCiclo(ciclo.key)}</span>
                       <span className="text-sm font-normal text-gray-600">
-                        ({turno.horario})
+                        {getDescricaoCiclo(ciclo.key)}
                       </span>
                     </div>
                   </td>
@@ -98,12 +98,12 @@ export function TabelaResumo({ resumo, datas, onClickCelula }: TabelaResumoProps
 
                 {/* Linhas de veículos */}
                 {veiculos.map(veiculo => {
-                  const valores = resumo.turnos[turno.key][veiculo.key];
+                  const valores = resumo.ciclos[ciclo.key][veiculo.key];
                   const total = calcularTotal(valores);
 
                   return (
                     <tr
-                      key={`${turno.key}-${veiculo.key}`}
+                      key={`${ciclo.key}-${veiculo.key}`}
                       className="border-b border-gray-200 hover:bg-gray-50 transition-colors"
                     >
                       <td className="px-4 py-3 text-sm text-gray-700 sticky left-0 bg-white">
@@ -123,7 +123,7 @@ export function TabelaResumo({ resumo, datas, onClickCelula }: TabelaResumoProps
                               quantidade > 0 &&
                               onClickCelula(
                                 datas[diaIndex].toISOString().split('T')[0],
-                                turno.key,
+                                ciclo.key,
                                 veiculo.key
                               )
                             }
@@ -145,12 +145,12 @@ export function TabelaResumo({ resumo, datas, onClickCelula }: TabelaResumoProps
                   );
                 })}
 
-                {/* Subtotal do turno */}
+                {/* Subtotal do ciclo */}
                 <tr className="bg-blue-50 border-b border-blue-200">
                   <td className="px-4 py-3 font-semibold text-gray-900 sticky left-0 bg-blue-50">
                     Subtotal
                   </td>
-                  {resumo.turnos[turno.key].subtotal.map((valor, index) => (
+                  {resumo.ciclos[ciclo.key].subtotal.map((valor, index) => (
                     <td
                       key={index}
                       className="px-3 py-3 text-center font-bold text-blue-700"
@@ -159,12 +159,12 @@ export function TabelaResumo({ resumo, datas, onClickCelula }: TabelaResumoProps
                     </td>
                   ))}
                   <td className="px-4 py-3 text-center font-bold text-blue-700">
-                    {calcularTotal(resumo.turnos[turno.key].subtotal)}
+                    {calcularTotal(resumo.ciclos[ciclo.key].subtotal)}
                   </td>
                 </tr>
 
-                {/* Espaçamento entre turnos (exceto último) */}
-                {turnoIndex < turnos.length - 1 && (
+                {/* Espaçamento entre ciclos (exceto último) */}
+                {cicloIndex < ciclos.length - 1 && (
                   <tr className="h-2 bg-gray-50"></tr>
                 )}
               </React.Fragment>

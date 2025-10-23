@@ -4,18 +4,18 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import api from '../services/api';
-import { TurnoDisponibilidade, TipoVeiculo, CicloRota } from '../types/disponibilidade';
+import { TipoVeiculo, CicloRota } from '../types/disponibilidade';
 
-interface ResumoTurno {
+interface ResumoCiclo {
   [key: string]: number[]; // TipoVeiculo -> array de 7 dias
   subtotal: number[];
 }
 
 interface ResumoData {
-  turnos: {
-    [TurnoDisponibilidade.MATUTINO]: ResumoTurno;
-    [TurnoDisponibilidade.VESPERTINO]: ResumoTurno;
-    [TurnoDisponibilidade.NOTURNO]: ResumoTurno;
+  ciclos: {
+    [CicloRota.CICLO_1]: ResumoCiclo;
+    [CicloRota.CICLO_2]: ResumoCiclo;
+    [CicloRota.SAME_DAY]: ResumoCiclo;
   };
   totalGeral: number[];
 }
@@ -37,16 +37,9 @@ interface MotoristaDisponivel {
 export function useResumoDisponibilidade(dataInicio: string, dataFim: string) {
   const [selectedCell, setSelectedCell] = useState<{
     data: string;
-    turno: TurnoDisponibilidade;
+    ciclo: CicloRota;
     tipoVeiculo: TipoVeiculo;
   } | null>(null);
-
-  // Backend retorna contagens por ciclo; convertemos para turnos exibidos na UI
-  const cicloParaTurnoMap: Record<CicloRota, TurnoDisponibilidade> = {
-    [CicloRota.CICLO_1]: TurnoDisponibilidade.MATUTINO,
-    [CicloRota.CICLO_2]: TurnoDisponibilidade.VESPERTINO,
-    [CicloRota.SAME_DAY]: TurnoDisponibilidade.NOTURNO
-  };
 
   /**
    * Buscar resumo consolidado
@@ -80,7 +73,7 @@ export function useResumoDisponibilidade(dataInicio: string, dataFim: string) {
       
       const response = await api.post('/gestao/disponibilidades/buscar-motoristas', {
         data: selectedCell.data,
-        turno: selectedCell.turno,
+        ciclo: selectedCell.ciclo,
         tipoVeiculo: selectedCell.tipoVeiculo
       });
       
@@ -95,6 +88,16 @@ export function useResumoDisponibilidade(dataInicio: string, dataFim: string) {
   const processarResumo = (): ResumoData | null => {
     if (!resumoRaw) return null;
 
+    const criarLinhaBase = () => Array.from({ length: 7 }, () => 0);
+
+    const criarResumoCiclo = (): ResumoCiclo => ({
+      [TipoVeiculo.MOTOCICLETA]: criarLinhaBase(),
+      [TipoVeiculo.CARRO_PASSEIO]: criarLinhaBase(),
+      [TipoVeiculo.CARGO_VAN]: criarLinhaBase(),
+      [TipoVeiculo.LARGE_VAN]: criarLinhaBase(),
+      subtotal: criarLinhaBase()
+    });
+
     // Gerar array de datas (7 dias)
     const inicio = new Date(dataInicio);
     const datas: string[] = [];
@@ -106,30 +109,12 @@ export function useResumoDisponibilidade(dataInicio: string, dataFim: string) {
 
     // Inicializar estrutura
     const resultado: ResumoData = {
-      turnos: {
-        [TurnoDisponibilidade.MATUTINO]: {
-          [TipoVeiculo.MOTOCICLETA]: [0, 0, 0, 0, 0, 0, 0],
-          [TipoVeiculo.CARRO_PASSEIO]: [0, 0, 0, 0, 0, 0, 0],
-          [TipoVeiculo.CARGO_VAN]: [0, 0, 0, 0, 0, 0, 0],
-          [TipoVeiculo.LARGE_VAN]: [0, 0, 0, 0, 0, 0, 0],
-          subtotal: [0, 0, 0, 0, 0, 0, 0]
-        },
-        [TurnoDisponibilidade.VESPERTINO]: {
-          [TipoVeiculo.MOTOCICLETA]: [0, 0, 0, 0, 0, 0, 0],
-          [TipoVeiculo.CARRO_PASSEIO]: [0, 0, 0, 0, 0, 0, 0],
-          [TipoVeiculo.CARGO_VAN]: [0, 0, 0, 0, 0, 0, 0],
-          [TipoVeiculo.LARGE_VAN]: [0, 0, 0, 0, 0, 0, 0],
-          subtotal: [0, 0, 0, 0, 0, 0, 0]
-        },
-        [TurnoDisponibilidade.NOTURNO]: {
-          [TipoVeiculo.MOTOCICLETA]: [0, 0, 0, 0, 0, 0, 0],
-          [TipoVeiculo.CARRO_PASSEIO]: [0, 0, 0, 0, 0, 0, 0],
-          [TipoVeiculo.CARGO_VAN]: [0, 0, 0, 0, 0, 0, 0],
-          [TipoVeiculo.LARGE_VAN]: [0, 0, 0, 0, 0, 0, 0],
-          subtotal: [0, 0, 0, 0, 0, 0, 0]
-        }
+      ciclos: {
+        [CicloRota.CICLO_1]: criarResumoCiclo(),
+        [CicloRota.CICLO_2]: criarResumoCiclo(),
+        [CicloRota.SAME_DAY]: criarResumoCiclo()
       },
-      totalGeral: [0, 0, 0, 0, 0, 0, 0]
+      totalGeral: criarLinhaBase()
     };
 
     // Preencher dados
@@ -140,18 +125,17 @@ export function useResumoDisponibilidade(dataInicio: string, dataFim: string) {
       Object.entries(tiposVeiculo).forEach(([tipoVeiculo, ciclos]: [string, any]) => {
         Object.entries(ciclos).forEach(([ciclo, quantidade]: [string, any]) => {
           const cicloKey = ciclo as CicloRota;
-          const turnoKey = cicloParaTurnoMap[cicloKey];
           const veiculoKey = tipoVeiculo as TipoVeiculo;
           const quantidadeNumerica =
             typeof quantidade === 'number' ? quantidade : Number(quantidade) || 0;
 
           if (
-            turnoKey &&
-            resultado.turnos[turnoKey] &&
-            resultado.turnos[turnoKey][veiculoKey]
+            cicloKey &&
+            resultado.ciclos[cicloKey] &&
+            resultado.ciclos[cicloKey][veiculoKey]
           ) {
-            resultado.turnos[turnoKey][veiculoKey][diaIndex] = quantidadeNumerica;
-            resultado.turnos[turnoKey].subtotal[diaIndex] += quantidadeNumerica;
+            resultado.ciclos[cicloKey][veiculoKey][diaIndex] = quantidadeNumerica;
+            resultado.ciclos[cicloKey].subtotal[diaIndex] += quantidadeNumerica;
             resultado.totalGeral[diaIndex] += quantidadeNumerica;
           }
         });
@@ -166,8 +150,8 @@ export function useResumoDisponibilidade(dataInicio: string, dataFim: string) {
   /**
    * Abrir modal de motoristas
    */
-  const abrirModalMotoristas = (data: string, turno: TurnoDisponibilidade, tipoVeiculo: TipoVeiculo) => {
-    setSelectedCell({ data, turno, tipoVeiculo });
+  const abrirModalMotoristas = (data: string, ciclo: CicloRota, tipoVeiculo: TipoVeiculo) => {
+    setSelectedCell({ data, ciclo, tipoVeiculo });
   };
 
   /**

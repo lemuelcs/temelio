@@ -1,6 +1,6 @@
 // frontend/src/components/disponibilidade/FiltrosPeriodo.tsx
 import { Calendar } from 'lucide-react';
-import { getInicioSemana, getFimSemana, formatarDiaMes } from '../../utils/disponibilidade.utils';
+import { getInicioSemana, getFimSemana, formatarDiaMes, getNumeroSemana } from '../../utils/disponibilidade.utils';
 
 interface FiltrosPeriodoProps {
   periodoSelecionado: 'corrente' | 'proxima' | 'customizado';
@@ -22,10 +22,12 @@ export function FiltrosPeriodo({
   const hoje = new Date();
   const inicioSemanaCorrente = getInicioSemana(hoje);
   const fimSemanaCorrente = getFimSemana(hoje);
+  const numeroSemanaCorrente = getNumeroSemana(inicioSemanaCorrente);
   
   const inicioProximaSemana = new Date(fimSemanaCorrente);
   inicioProximaSemana.setDate(inicioProximaSemana.getDate() + 1);
   const fimProximaSemana = getFimSemana(inicioProximaSemana);
+  const numeroProximaSemana = getNumeroSemana(inicioProximaSemana);
 
   const formatarData = (data: Date): string => {
     return data.toISOString().split('T')[0];
@@ -56,7 +58,9 @@ export function FiltrosPeriodo({
           `}
         >
           <div className="flex items-center justify-between mb-2">
-            <span className="font-semibold text-gray-900">Semana Corrente</span>
+            <span className="font-semibold text-gray-900">
+              Semana Corrente: <span className="text-blue-600">{numeroSemanaCorrente}</span>
+            </span>
             {periodoSelecionado === 'corrente' && (
               <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
             )}
@@ -79,7 +83,9 @@ export function FiltrosPeriodo({
           `}
         >
           <div className="flex items-center justify-between mb-2">
-            <span className="font-semibold text-gray-900">Próxima Semana</span>
+            <span className="font-semibold text-gray-900">
+              Próxima Semana: <span className="text-blue-600">{numeroProximaSemana}</span>
+            </span>
             {periodoSelecionado === 'proxima' && (
               <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
             )}

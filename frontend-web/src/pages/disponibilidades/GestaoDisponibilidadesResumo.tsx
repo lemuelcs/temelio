@@ -135,7 +135,7 @@ export default function GestaoDisponibilidadesResumo() {
       <div className="space-y-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">📊 Resumo de Disponibilidade</h1>
-          <p className="text-gray-600 mt-1">Visualização consolidada por turno e tipo de veículo</p>
+          <p className="text-gray-600 mt-1">Visualização consolidada por ciclo e tipo de veículo</p>
         </div>
 
         <div className="bg-red-50 border-l-4 border-red-400 p-4 rounded-r-lg">
@@ -159,7 +159,7 @@ export default function GestaoDisponibilidadesResumo() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">📊 Resumo de Disponibilidade</h1>
           <p className="text-gray-600 mt-1">
-            Visualização consolidada por turno e tipo de veículo
+            Visualização consolidada por ciclo e tipo de veículo
           </p>
         </div>
 
@@ -253,7 +253,7 @@ export default function GestaoDisponibilidadesResumo() {
           motoristas={motoristas || []}
           isLoading={isLoadingMotoristas}
           data={selectedCell.data}
-          turno={selectedCell.turno}
+          ciclo={selectedCell.ciclo}
           tipoVeiculo={selectedCell.tipoVeiculo}
         />
       )}

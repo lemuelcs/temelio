@@ -1,5 +1,5 @@
 // frontend/src/utils/disponibilidade.utils.ts
-import { TurnoDisponibilidade } from '../types/disponibilidade';
+import { TurnoDisponibilidade, CicloRota, CICLOS_HORARIOS, CICLOS_LABELS, CICLOS_TITULOS } from '../types/disponibilidade';
 
 /**
  * Retorna o início da semana (domingo) para uma data
@@ -17,6 +17,17 @@ export function getInicioSemana(data: Date): Date {
 export function getFimSemana(data: Date): Date {
   const inicio = getInicioSemana(data);
   return new Date(inicio.setDate(inicio.getDate() + 6));
+}
+
+/**
+ * Retorna o número da semana no formato ISO-8601 (1-53)
+ */
+export function getNumeroSemana(data: Date): number {
+  const date = new Date(Date.UTC(data.getFullYear(), data.getMonth(), data.getDate()));
+  const diaSemana = date.getUTCDay() || 7;
+  date.setUTCDate(date.getUTCDate() + 4 - diaSemana);
+  const inicioAno = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+  return Math.ceil(((date.getTime() - inicioAno.getTime()) / 86400000 + 1) / 7);
 }
 
 /**
@@ -111,6 +122,32 @@ export function getLabelTurno(turno: TurnoDisponibilidade): string {
     [TurnoDisponibilidade.NOTURNO]: 'Noturno (18h-22h)'
   };
   return labels[turno];
+}
+
+/**
+ * Retorna ícone do ciclo
+ */
+export function getIconeCiclo(ciclo: CicloRota): string {
+  const icones = {
+    [CicloRota.CICLO_1]: '🌅',
+    [CicloRota.CICLO_2]: '🌇',
+    [CicloRota.SAME_DAY]: '🌃'
+  };
+  return icones[ciclo];
+}
+
+/**
+ * Retorna título do ciclo (Ciclo 1, Ciclo 2, Same Day)
+ */
+export function getTituloCiclo(ciclo: CicloRota): string {
+  return CICLOS_TITULOS[ciclo];
+}
+
+/**
+ * Retorna descrição combinando label e horário do ciclo
+ */
+export function getDescricaoCiclo(ciclo: CicloRota): string {
+  return `${CICLOS_LABELS[ciclo]} (${CICLOS_HORARIOS[ciclo]})`;
 }
 
 /**

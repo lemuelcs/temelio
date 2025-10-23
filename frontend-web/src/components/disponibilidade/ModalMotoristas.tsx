@@ -1,7 +1,7 @@
 // frontend/src/components/disponibilidade/ModalMotoristas.tsx
 import { X, Phone, MapPin, Award } from 'lucide-react';
-import { TurnoDisponibilidade, TipoVeiculo } from '../../types/disponibilidade';
-import { getIconeTurno, formatarDiaMes } from '../../utils/disponibilidade.utils';
+import { CicloRota, TipoVeiculo } from '../../types/disponibilidade';
+import { getIconeCiclo, getTituloCiclo, getDescricaoCiclo, formatarDiaMes } from '../../utils/disponibilidade.utils';
 
 interface Motorista {
   id: string;
@@ -23,7 +23,7 @@ interface ModalMotoristasProps {
   motoristas: Motorista[];
   isLoading: boolean;
   data: string;
-  turno: TurnoDisponibilidade;
+  ciclo: CicloRota;
   tipoVeiculo: TipoVeiculo;
 }
 
@@ -33,7 +33,7 @@ export function ModalMotoristas({
   motoristas,
   isLoading,
   data,
-  turno,
+  ciclo,
   tipoVeiculo
 }: ModalMotoristasProps) {
   if (!isOpen) return null;
@@ -118,7 +118,9 @@ export function ModalMotoristas({
                 <div className="flex items-center gap-3 text-blue-100 text-sm">
                   <span>{getIconeVeiculo(tipoVeiculo)} {getLabelVeiculo(tipoVeiculo)}</span>
                   <span>•</span>
-                  <span>{getIconeTurno(turno)} {turno}</span>
+                  <span>{getIconeCiclo(ciclo)} {getTituloCiclo(ciclo)}</span>
+                  <span>•</span>
+                  <span>{getDescricaoCiclo(ciclo)}</span>
                   <span>•</span>
                   <span>{formatarDiaMes(new Date(data))}</span>
                 </div>

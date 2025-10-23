@@ -75,16 +75,19 @@ export interface HistoricoDisponibilidade {
 // INTERFACES PARA RESUMO (GESTÃO)
 // ============================================
 
-export interface ResumoTurno {
+export interface ResumoCiclo {
   [key: string]: number[];
   subtotal: number[];
 }
 
+// Alias legado para manter compatibilidade com referências existentes
+export type ResumoTurno = ResumoCiclo;
+
 export interface ResumoDisponibilidade {
-  turnos: {
-    [TurnoDisponibilidade.MATUTINO]: ResumoTurno;
-    [TurnoDisponibilidade.VESPERTINO]: ResumoTurno;
-    [TurnoDisponibilidade.NOTURNO]: ResumoTurno;
+  ciclos: {
+    [CicloRota.CICLO_1]: ResumoCiclo;
+    [CicloRota.CICLO_2]: ResumoCiclo;
+    [CicloRota.SAME_DAY]: ResumoCiclo;
   };
   totalGeral: number[];
 }
@@ -128,6 +131,12 @@ export const CICLOS_HORARIOS: Record<CicloRota, string> = {
   [CicloRota.CICLO_1]: '7h-17h',
   [CicloRota.CICLO_2]: '12h-20h',
   [CicloRota.SAME_DAY]: '18h-23h'
+};
+
+export const CICLOS_TITULOS: Record<CicloRota, string> = {
+  [CicloRota.CICLO_1]: 'Ciclo 1',
+  [CicloRota.CICLO_2]: 'Ciclo 2',
+  [CicloRota.SAME_DAY]: 'Same Day'
 };
 
 export const TIPO_VEICULO_LABELS: Record<TipoVeiculo, string> = {

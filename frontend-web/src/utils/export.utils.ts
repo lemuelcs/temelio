@@ -62,16 +62,16 @@ export function prepararDadosResumo(
   // Cabeçalho da tabela
   const diasSemana = ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SAB'];
   dados.push([
-    'Turno / Veículo',
+    'Ciclo / Veículo',
     ...diasSemana,
     'Total'
   ]);
   
-  // Para cada turno
-  const turnos = [
-    { key: 'MATUTINO', label: 'MATUTINO (8h-12h)', icon: '☀️' },
-    { key: 'VESPERTINO', label: 'VESPERTINO (13h-17h)', icon: '🌤️' },
-    { key: 'NOTURNO', label: 'NOTURNO (18h-22h)', icon: '🌙' }
+  // Para cada ciclo
+  const ciclos = [
+    { key: 'CICLO_1', label: 'Ciclo 1', descricao: 'Manhã/Tarde (7h-17h)', icon: '🌅' },
+    { key: 'CICLO_2', label: 'Ciclo 2', descricao: 'Tarde (12h-20h)', icon: '🌇' },
+    { key: 'SAME_DAY', label: 'Same Day', descricao: 'Noite (18h-23h)', icon: '🌃' }
   ];
   
   const veiculos = [
@@ -81,13 +81,13 @@ export function prepararDadosResumo(
     { key: 'LARGE_VAN', label: 'Large Van', icon: '🚛' }
   ];
   
-  turnos.forEach(turno => {
-    // Header do turno
-    dados.push([`${turno.icon} ${turno.label}`, '', '', '', '', '', '', '']);
+  ciclos.forEach(ciclo => {
+    // Header do ciclo
+    dados.push([`${ciclo.icon} ${ciclo.label} - ${ciclo.descricao}`, '', '', '', '', '', '', '']);
     
     // Linhas de veículos
     veiculos.forEach(veiculo => {
-      const valores = resumo.turnos[turno.key][veiculo.key];
+      const valores = resumo.ciclos[ciclo.key][veiculo.key];
       const total = valores.reduce((acc: number, val: number) => acc + val, 0);
       dados.push([
         `  ${veiculo.icon} ${veiculo.label}`,
@@ -96,8 +96,8 @@ export function prepararDadosResumo(
       ]);
     });
     
-    // Subtotal do turno
-    const subtotal = resumo.turnos[turno.key].subtotal;
+    // Subtotal do ciclo
+    const subtotal = resumo.ciclos[ciclo.key].subtotal;
     const totalSubtotal = subtotal.reduce((acc: number, val: number) => acc + val, 0);
     dados.push([
       'Subtotal',
