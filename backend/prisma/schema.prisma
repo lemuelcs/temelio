@@ -7,7 +7,239 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model alertas {
+// ========== ENUMS ==========
+
+enum StatusMotorista {
+  ATIVO
+  INATIVO
+  SUSPENSO
+  ONBOARDING
+  EXCLUIDO
+}
+
+enum TipoVeiculo {
+  MOTOCICLETA
+  CARRO_PASSEIO
+  CARGO_VAN
+  LARGE_VAN
+}
+
+enum PropriedadeVeiculo {
+  PROPRIO
+  TRANSPORTADORA
+}
+
+enum TipoPerfil {
+  DESPACHANTE_PLANEJADOR
+  MOTORISTA
+  ADMINISTRADOR
+}
+
+enum StatusRota {
+  DISPONIVEL
+  OFERTADA
+  ACEITA
+  RECUSADA
+  CANCELADA
+  CONFIRMADA
+  EM_ANDAMENTO
+  CONCLUIDA
+  VALIDADA
+}
+
+enum TipoRota {
+  ENTREGA
+  EXTRA
+  CUBOUT
+  RESGATE
+  NURSERY_LEVEL_1
+  NURSERY_LEVEL_2
+}
+
+enum CicloRota {
+  CICLO_1
+  CICLO_2
+  SAME_DAY
+}
+
+enum StatusOferta {
+  PENDENTE
+  ACEITA
+  RECUSADA
+  EXPIRADA
+}
+
+enum TipoServico {
+  BIKE
+  SMALL_VAN
+  LARGE_VAN
+  HELPER
+  PASSENGER
+}
+
+enum TipoPropriedade {
+  PROPRIO
+  TRANSPORTADORA
+}
+
+// ========== MODELS ==========
+
+model Usuario {
+  id                        String                      @id
+  email                     String                      @unique
+  senha                     String
+  nome                      String
+  perfil                    TipoPerfil
+  ativo                     Boolean                     @default(true)
+  createdAt                 DateTime                    @default(now())
+  updatedAt                 DateTime
+  
+  // Relações
+  auditLogs                 AuditLog[]
+  motorista                 Motorista?
+  historicoStatusMotoristas HistoricoStatusMotorista[]
+
+  @@map("usuarios")
+}
+
+model Motorista {
+  id                          String              @id
+  transporterId               String?             @unique @db.VarChar(14)
+  nomeCompleto                String              @db.VarChar(50)
+  celular                     String              @db.VarChar(11)
+  cep                         String?
+  logradouro                  String?
+  numero                      String?
+  complemento                 String?
+  cidade                      String              @db.VarChar(30)
+  uf                          String              @db.VarChar(2)
+  bairro                      String?             @db.VarChar(50)
+  cpf                         String              @unique @db.VarChar(11)
+  dataNascimento              DateTime?
+  email                       String              @db.VarChar(50)
+  chavePix                    String?             @db.VarChar(60)
+  tipoVeiculo                 TipoVeiculo
+  propriedadeVeiculo          PropriedadeVeiculo  @default(PROPRIO)
+  status                      StatusMotorista     @default(ATIVO)
+  pontuacao                   Float               @default(0)
+  anoFabricacaoVeiculo        Int?
+  placaVeiculo                String?             @db.VarChar(7)
+  primeiraRotaNursery         DateTime?
+  iniciouNurseryL1            DateTime?
+  iniciouNurseryL2            DateTime?
+  nivel                       String?             @default("INICIANTE") @db.VarChar(45)
+  usuarioId                   String              @unique
+  createdAt                   DateTime            @default(now())
+  updatedAt                   DateTime
+  
+  // Relações
+  usuario                     Usuario             @relation(fields: [usuarioId], references: [id])
+  alertas                     Alerta[]
+  contratos                   ContratoMotorista[]
+  disponibilidades            Disponibilidade[]
+  documento                   DocumentoMotorista?
+  faturamentos                Faturamento[]
+  historicoDisponibilidades   HistoricoDisponibilidade[]
+  historicoStatus             HistoricoStatusMotorista[]
+  ofertasRotas                OfertaRota[]
+  rotas                       Rota[]
+
+  @@index([cpf])
+  @@index([status])
+  @@index([tipoVeiculo])
+  @@map("motoristas")
+}
+
+model DocumentoMotorista {
+  id                    String      @id
+  motoristaId           String      @unique
+  numeroCNH             String?     @db.VarChar(11)
+  validadeCNH           DateTime?
+  anoLicenciamento      Int?
+  dataVerificacaoBRK    DateTime?
+  proximaVerificacaoBRK DateTime?
+  statusBRK             Boolean     @default(false)
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime
+  
+  motorista             Motorista   @relation(fields: [motoristaId], references: [id])
+
+  @@index([proximaVerificacaoBRK])
+  @@index([validadeCNH])
+  @@map("documentos_motoristas")
+}
+
+model ContratoMotorista {
+  id                  String      @id
+  motoristaId         String
+  numeroContrato      String      @unique @db.VarChar(20)
+  dataAssinatura      DateTime
+  dataVigenciaInicial DateTime
+  ativo               Boolean     @default(true)
+  cnpjMEI             String?     @db.VarChar(14)
+  razaoSocialMEI      String?     @db.VarChar(100)
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime
+  
+  motorista           Motorista   @relation(fields: [motoristaId], references: [id])
+
+  @@index([ativo])
+  @@index([motoristaId])
+  @@map("contratos_motoristas")
+}
+
+model Disponibilidade {
+  id          String      @id
+  motoristaId String
+  data        DateTime    @db.Date
+  ciclo       CicloRota
+  disponivel  Boolean     @default(true)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime
+  
+  motorista   Motorista   @relation(fields: [motoristaId], references: [id])
+
+  @@unique([motoristaId, data, ciclo])
+  @@index([motoristaId, data])
+  @@map("disponibilidades")
+}
+
+model HistoricoDisponibilidade {
+  id               String      @id
+  motoristaId      String
+  data             DateTime    @db.Date
+  ciclo            CicloRota
+  disponivelAntigo Boolean
+  disponivelNovo   Boolean
+  alteradoPor      String?
+  motivoAlteracao  String?     @db.Text
+  createdAt        DateTime    @default(now())
+  
+  motorista        Motorista   @relation(fields: [motoristaId], references: [id], onDelete: Cascade)
+
+  @@index([createdAt])
+  @@index([motoristaId, data])
+  @@map("historico_disponibilidades")
+}
+
+model HistoricoStatusMotorista {
+  id             String          @id
+  motoristaId    String
+  statusAnterior StatusMotorista
+  statusNovo     StatusMotorista
+  motivo         String?         @db.Text
+  alteradoPor    String
+  createdAt      DateTime        @default(now())
+  
+  motorista      Motorista       @relation(fields: [motoristaId], references: [id], onDelete: Cascade)
+  usuario        Usuario         @relation(fields: [alteradoPor], references: [id])
+
+  @@index([alteradoPor])
+  @@index([motoristaId, createdAt])
+  @@map("historico_status_motoristas")
+}
+
+model Alerta {
   id            String      @id
   tipo          String      @db.VarChar(50)
   motoristaId   String?
@@ -18,13 +250,172 @@ model alertas {
   dataResolucao DateTime?
   createdAt     DateTime    @default(now())
   updatedAt     DateTime
-  motoristas    motoristas? @relation(fields: [motoristaId], references: [id])
+  
+  motorista     Motorista?  @relation(fields: [motoristaId], references: [id])
 
   @@index([motoristaId, resolvido])
   @@index([tipo, resolvido])
+  @@map("alertas")
 }
 
-model audit_logs {
+model Faturamento {
+  id                    String      @id
+  motoristaId           String
+  quinzena              Int
+  mes                   Int
+  ano                   Int
+  valorRotas            Decimal     @default(0.00) @db.Decimal(10, 2)
+  valorBonus            Decimal     @default(0.00) @db.Decimal(10, 2)
+  valorAjudaCombustivel Decimal     @default(0.00) @db.Decimal(10, 2)
+  valorCancelamentos    Decimal     @default(0.00) @db.Decimal(10, 2)
+  valorTotal            Decimal     @default(0.00) @db.Decimal(10, 2)
+  pago                  Boolean     @default(false)
+  dataPagamento         DateTime?
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime
+  
+  motorista             Motorista   @relation(fields: [motoristaId], references: [id])
+
+  @@unique([motoristaId, quinzena, mes, ano])
+  @@index([motoristaId])
+  @@map("faturamentos")
+}
+
+model Local {
+  id        String   @id
+  codigo    String   @unique @db.VarChar(10)
+  nome      String   @db.VarChar(100)
+  endereco  String   @db.Text
+  latitude  Decimal? @db.Decimal(10, 8)
+  longitude Decimal? @db.Decimal(11, 8)
+  cidade    String   @db.VarChar(50)
+  bairro    String?  @db.VarChar(30)
+  uf        String   @db.VarChar(2)
+  cep       String?  @db.VarChar(8)
+  ativo     Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime
+  
+  rotas     Rota[]
+
+  @@map("locais")
+}
+
+model Rota {
+  id                    String         @id
+  dataRota              DateTime       @db.Date
+  horaInicio            DateTime       @db.Time(0)
+  horaFim               DateTime?      @db.Time(0)
+  tipoVeiculo           TipoVeiculo
+  tipoRota              TipoRota       @default(ENTREGA)
+  cicloRota             CicloRota      @default(CICLO_1)
+  tamanhoHoras          Decimal        @db.Decimal(4, 2)
+  veiculoTransportadora Boolean        @default(false)
+  valorHora             Decimal        @db.Decimal(10, 2)
+  bonusPorHora          Decimal        @default(0.00) @db.Decimal(10, 2)
+  bonusFixo             Decimal        @default(0.00) @db.Decimal(10, 2)
+  valorProjetado        Decimal        @db.Decimal(10, 2)
+  kmProjetado           Int?           @default(50)
+  tabelaPrecosId        String?
+  valorHoraSnapshot     Decimal?       @db.Decimal(10, 2)
+  valorKmSnapshot       Decimal?       @db.Decimal(10, 2)
+  valorCancelSnapshot   Decimal?       @db.Decimal(10, 2)
+  bonusWeekendSnapshot  Decimal?       @db.Decimal(10, 2)
+  latitudeOrigem        Decimal?       @db.Decimal(10, 8)
+  longitudeOrigem       Decimal?       @db.Decimal(11, 8)
+  codigoRota            String?        @unique
+  qtdePacotes           Int?
+  qtdeLocais            Int?
+  qtdeParadas           Int?
+  horaInicioReal        DateTime?
+  horaFimReal           DateTime?
+  kmReal                Decimal?       @db.Decimal(10, 2)
+  valorKm               Decimal        @default(0.64) @db.Decimal(10, 2)
+  valorBonusKm          Decimal?       @db.Decimal(10, 2)
+  valorTotalRota        Decimal        @db.Decimal(10, 2)
+  dataValidacao         DateTime?
+  validadoPor           String?
+  status                StatusRota     @default(DISPONIVEL)
+  localId               String
+  motivoCancelamento    String?        @db.Text
+  dataCancelamento      DateTime?
+  valorCancelamento     Decimal?       @db.Decimal(10, 2)
+  motoristaId           String?
+  criadoPor             String
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime
+  
+  local                 Local          @relation(fields: [localId], references: [id])
+  motorista             Motorista?     @relation(fields: [motoristaId], references: [id])
+  tabelaPrecos          TabelaPreco?   @relation(fields: [tabelaPrecosId], references: [id])
+  ofertas               OfertaRota[]
+
+  @@index([codigoRota])
+  @@index([dataRota, status])
+  @@index([localId])
+  @@index([motoristaId])
+  @@index([status])
+  @@index([tabelaPrecosId])
+  @@index([tipoVeiculo])
+  @@map("rotas")
+}
+
+model OfertaRota {
+  id                  String        @id
+  rotaId              String
+  motoristaId         String
+  status              StatusOferta  @default(PENDENTE)
+  dataEnvio           DateTime      @default(now())
+  dataVisualizacao    DateTime?
+  dataResposta        DateTime?
+  ipResposta          String?       @db.VarChar(45)
+  dispositivoResposta String?       @db.VarChar(100)
+  latitudeResposta    Decimal?      @db.Decimal(10, 8)
+  longitudeResposta   Decimal?      @db.Decimal(11, 8)
+  adicionouAgenda     Boolean       @default(false)
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime
+  
+  motorista           Motorista     @relation(fields: [motoristaId], references: [id])
+  rota                Rota          @relation(fields: [rotaId], references: [id])
+
+  @@index([motoristaId, status])
+  @@index([rotaId])
+  @@map("ofertas_rotas")
+}
+
+model TabelaPreco {
+  id                   String              @id
+  tipoVeiculo          TipoVeiculo?
+  propriedadeVeiculo   PropriedadeVeiculo?
+  tipoServico          TipoServico?
+  propriedade          TipoPropriedade?
+  versao               Int                 @default(1)
+  estacao              String              @default("DBS5") @db.VarChar(10)
+  valorHora            Decimal             @db.Decimal(10, 2)
+  valorCancelamento    Decimal             @db.Decimal(10, 2)
+  valorKm              Decimal             @db.Decimal(10, 2)
+  bonusWeekend         Decimal             @default(0.00) @db.Decimal(10, 2)
+  valorHoraDSP         Decimal?            @db.Decimal(10, 2)
+  valorCancelamentoDSP Decimal?            @db.Decimal(10, 2)
+  bonusWeekendDSP      Decimal?            @db.Decimal(10, 2)
+  valorPorPacote       Decimal?            @db.Decimal(10, 2)
+  dataInicioVigencia   DateTime
+  dataFimVigencia      DateTime?
+  ativo                Boolean             @default(true)
+  criadoPor            String?
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime
+  
+  rotas                Rota[]
+
+  @@index([estacao, ativo, dataInicioVigencia])
+  @@index([tipoServico, propriedade, ativo])
+  @@index([tipoVeiculo, propriedadeVeiculo, ativo])
+  @@map("tabelas_precos")
+}
+
+model AuditLog {
   id          String   @id
   usuarioId   String
   acao        String   @db.VarChar(100)
@@ -36,130 +427,15 @@ model audit_logs {
   latitude    Decimal? @db.Decimal(10, 8)
   longitude   Decimal? @db.Decimal(11, 8)
   createdAt   DateTime @default(now())
-  usuarios    usuarios @relation(fields: [usuarioId], references: [id])
+  
+  usuario     Usuario  @relation(fields: [usuarioId], references: [id])
 
   @@index([entidade, entidadeId])
   @@index([usuarioId, createdAt])
+  @@map("audit_logs")
 }
 
-model contratos_motoristas {
-  id                  String     @id
-  motoristaId         String
-  numeroContrato      String     @unique @db.VarChar(20)
-  dataAssinatura      DateTime
-  dataVigenciaInicial DateTime
-  ativo               Boolean    @default(true)
-  cnpjMEI             String?    @db.VarChar(14)
-  razaoSocialMEI      String?    @db.VarChar(100)
-  createdAt           DateTime   @default(now())
-  updatedAt           DateTime
-  motoristas          motoristas @relation(fields: [motoristaId], references: [id])
-
-  @@index([ativo])
-  @@index([motoristaId])
-}
-
-model disponibilidades {
-  id          String                 @id
-  motoristaId String
-  data        DateTime               @db.Date
-  ciclo       disponibilidades_ciclo
-  disponivel  Boolean                @default(true)
-  createdAt   DateTime               @default(now())
-  updatedAt   DateTime
-  motoristas  motoristas             @relation(fields: [motoristaId], references: [id])
-
-  @@unique([motoristaId, data, ciclo])
-  @@index([motoristaId, data])
-}
-
-model documentos_motoristas {
-  id                    String     @id
-  motoristaId           String     @unique
-  numeroCNH             String?    @db.VarChar(11)
-  validadeCNH           DateTime?
-  anoLicenciamento      Int?
-  dataVerificacaoBRK    DateTime?
-  proximaVerificacaoBRK DateTime?
-  statusBRK             Boolean    @default(false)
-  createdAt             DateTime   @default(now())
-  updatedAt             DateTime
-  motoristas            motoristas @relation(fields: [motoristaId], references: [id])
-
-  @@index([proximaVerificacaoBRK])
-  @@index([validadeCNH])
-}
-
-model faturamentos {
-  id                    String     @id
-  motoristaId           String
-  quinzena              Int
-  mes                   Int
-  ano                   Int
-  valorRotas            Decimal    @default(0.00) @db.Decimal(10, 2)
-  valorBonus            Decimal    @default(0.00) @db.Decimal(10, 2)
-  valorAjudaCombustivel Decimal    @default(0.00) @db.Decimal(10, 2)
-  valorCancelamentos    Decimal    @default(0.00) @db.Decimal(10, 2)
-  valorTotal            Decimal    @default(0.00) @db.Decimal(10, 2)
-  pago                  Boolean    @default(false)
-  dataPagamento         DateTime?
-  createdAt             DateTime   @default(now())
-  updatedAt             DateTime
-  motoristas            motoristas @relation(fields: [motoristaId], references: [id])
-
-  @@unique([motoristaId, quinzena, mes, ano])
-  @@index([motoristaId])
-}
-
-model historico_disponibilidades {
-  id               String                           @id
-  motoristaId      String
-  data             DateTime                         @db.Date
-  ciclo            historico_disponibilidades_ciclo
-  disponivelAntigo Boolean
-  disponivelNovo   Boolean
-  alteradoPor      String?
-  motivoAlteracao  String?                          @db.Text
-  createdAt        DateTime                         @default(now())
-  motoristas       motoristas                       @relation(fields: [motoristaId], references: [id], onDelete: Cascade)
-
-  @@index([createdAt])
-  @@index([motoristaId, data])
-}
-
-model historico_status_motoristas {
-  id             String                                     @id
-  motoristaId    String
-  statusAnterior historico_status_motoristas_statusAnterior
-  statusNovo     historico_status_motoristas_statusNovo
-  motivo         String?                                    @db.Text
-  alteradoPor    String
-  createdAt      DateTime                                   @default(now())
-  usuarios       usuarios                                   @relation(fields: [alteradoPor], references: [id])
-  motoristas     motoristas                                 @relation(fields: [motoristaId], references: [id], onDelete: Cascade)
-
-  @@index([alteradoPor], map: "historico_status_motoristas_alteradoPor_fkey")
-  @@index([motoristaId, createdAt])
-}
-
-model locais {
-  id        String   @id
-  codigo    String   @unique @db.VarChar(10)
-  nome      String   @db.VarChar(100)
-  endereco  String   @db.Text
-  latitude  Decimal? @db.Decimal(10, 8)
-  longitude Decimal? @db.Decimal(11, 8)
-  cidade    String   @db.VarChar(50)
-  bairro    String?  @db.VarChar(30)
-  uf        String   @db.VarChar(2)
-  ativo     Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime
-  cep       String?  @db.VarChar(8)
-  rotas     rotas[]
-}
-
-model metricas_entregas {
+model MetricaEntrega {
   id                  String    @id
   rotaId              String
   motoristaId         String
@@ -179,291 +455,5 @@ model metricas_entregas {
 
   @@index([data])
   @@index([motoristaId])
-}
-
-model motoristas {
-  id                          String                        @id
-  transporterId               String?                       @unique @db.VarChar(14)
-  nomeCompleto                String                        @db.VarChar(50)
-  celular                     String                        @db.VarChar(11)
-  cep                         String?
-  logradouro                  String?
-  numero                      String?
-  complemento                 String?
-  cidade                      String                        @db.VarChar(30)
-  uf                          String                        @db.VarChar(2)
-  bairro                      String?                       @db.VarChar(50)
-  cpf                         String                        @unique @db.VarChar(11)
-  dataNascimento              DateTime?
-  email                       String                        @db.VarChar(50)
-  chavePix                    String?                       @db.VarChar(60)
-  tipoVeiculo                 motoristas_tipoVeiculo
-  propriedadeVeiculo          motoristas_propriedadeVeiculo @default(PROPRIO)
-  status                      motoristas_status             @default(ATIVO)
-  pontuacao                   Float                         @default(0)
-  anoFabricacaoVeiculo        Int?
-  placaVeiculo                String?                       @db.VarChar(7)
-  primeiraRotaNursery         DateTime?
-  iniciouNurseryL1            DateTime?
-  iniciouNurseryL2            DateTime?
-  createdAt                   DateTime                      @default(now())
-  updatedAt                   DateTime
-  usuarioId                   String                        @unique
-  nivel                       String?                       @default("INICIANTE") @db.VarChar(45)
-  alertas                     alertas[]
-  contratos_motoristas        contratos_motoristas[]
-  disponibilidades            disponibilidades[]
-  documentos_motoristas       documentos_motoristas?
-  faturamentos                faturamentos[]
-  historico_disponibilidades  historico_disponibilidades[]
-  historico_status_motoristas historico_status_motoristas[]
-  usuarios                    usuarios                      @relation(fields: [usuarioId], references: [id])
-  ofertas_rotas               ofertas_rotas[]
-  rotas                       rotas[]
-
-  @@index([cpf])
-  @@index([status])
-  @@index([tipoVeiculo])
-}
-
-model ofertas_rotas {
-  id                  String               @id
-  rotaId              String
-  motoristaId         String
-  status              ofertas_rotas_status @default(PENDENTE)
-  dataEnvio           DateTime             @default(now())
-  dataVisualizacao    DateTime?
-  dataResposta        DateTime?
-  ipResposta          String?              @db.VarChar(45)
-  dispositivoResposta String?              @db.VarChar(100)
-  latitudeResposta    Decimal?             @db.Decimal(10, 8)
-  longitudeResposta   Decimal?             @db.Decimal(11, 8)
-  adicionouAgenda     Boolean              @default(false)
-  createdAt           DateTime             @default(now())
-  updatedAt           DateTime
-  motoristas          motoristas           @relation(fields: [motoristaId], references: [id])
-  rotas               rotas                @relation(fields: [rotaId], references: [id])
-
-  @@index([motoristaId, status])
-  @@index([rotaId])
-}
-
-model rotas {
-  id                    String            @id
-  dataRota              DateTime          @db.Date
-  horaInicio            DateTime          @db.Time(0)
-  horaFim               DateTime?         @db.Time(0)
-  tipoVeiculo           rotas_tipoVeiculo
-  tipoRota              rotas_tipoRota    @default(ENTREGA)
-  cicloRota             rotas_cicloRota   @default(CICLO_1)
-  tamanhoHoras          Decimal           @db.Decimal(4, 2)
-  veiculoTransportadora Boolean           @default(false)
-  valorHora             Decimal           @db.Decimal(10, 2)
-  bonusPorHora          Decimal           @default(0.00) @db.Decimal(10, 2)
-  bonusFixo             Decimal           @default(0.00) @db.Decimal(10, 2)
-  valorProjetado        Decimal           @db.Decimal(10, 2)
-  kmProjetado           Int?              @default(50)
-  tabelaPrecosId        String?
-  valorHoraSnapshot     Decimal?          @db.Decimal(10, 2)
-  valorKmSnapshot       Decimal?          @db.Decimal(10, 2)
-  valorCancelSnapshot   Decimal?          @db.Decimal(10, 2)
-  bonusWeekendSnapshot  Decimal?          @db.Decimal(10, 2)
-  latitudeOrigem        Decimal?          @db.Decimal(10, 8)
-  longitudeOrigem       Decimal?          @db.Decimal(11, 8)
-  codigoRota            String?           @unique
-  qtdePacotes           Int?
-  qtdeLocais            Int?
-  qtdeParadas           Int?
-  horaInicioReal        DateTime?
-  horaFimReal           DateTime?
-  kmReal                Decimal?          @db.Decimal(10, 2)
-  valorKm               Decimal           @default(0.64) @db.Decimal(10, 2)
-  valorBonusKm          Decimal?          @db.Decimal(10, 2)
-  valorTotalRota        Decimal           @db.Decimal(10, 2)
-  dataValidacao         DateTime?
-  validadoPor           String?
-  status                rotas_status      @default(DISPONIVEL)
-  localId               String
-  motivoCancelamento    String?           @db.Text
-  dataCancelamento      DateTime?
-  valorCancelamento     Decimal?          @db.Decimal(10, 2)
-  motoristaId           String?
-  criadoPor             String
-  createdAt             DateTime          @default(now())
-  updatedAt             DateTime
-  ofertas_rotas         ofertas_rotas[]
-  locais                locais            @relation(fields: [localId], references: [id])
-  motoristas            motoristas?       @relation(fields: [motoristaId], references: [id])
-  tabelas_precos        tabelas_precos?   @relation(fields: [tabelaPrecosId], references: [id])
-
-  @@index([codigoRota])
-  @@index([dataRota, status])
-  @@index([localId], map: "rotas_localId_fkey")
-  @@index([motoristaId], map: "rotas_motoristaId_fkey")
-  @@index([status])
-  @@index([tabelaPrecosId])
-  @@index([tipoVeiculo])
-}
-
-model tabelas_precos {
-  id                   String                             @id
-  tipoVeiculo          tabelas_precos_tipoVeiculo?
-  propriedadeVeiculo   tabelas_precos_propriedadeVeiculo?
-  tipoServico          tabelas_precos_tipoServico?
-  propriedade          tabelas_precos_propriedade?
-  versao               Int                                @default(1)
-  estacao              String                             @default("DBS5") @db.VarChar(10)
-  valorHora            Decimal                            @db.Decimal(10, 2)
-  valorCancelamento    Decimal                            @db.Decimal(10, 2)
-  valorKm              Decimal                            @db.Decimal(10, 2)
-  bonusWeekend         Decimal                            @default(0.00) @db.Decimal(10, 2)
-  valorHoraDSP         Decimal?                           @db.Decimal(10, 2)
-  valorCancelamentoDSP Decimal?                           @db.Decimal(10, 2)
-  bonusWeekendDSP      Decimal?                           @db.Decimal(10, 2)
-  valorPorPacote       Decimal?                           @db.Decimal(10, 2)
-  dataInicioVigencia   DateTime
-  dataFimVigencia      DateTime?
-  ativo                Boolean                            @default(true)
-  createdAt            DateTime                           @default(now())
-  updatedAt            DateTime
-  criadoPor            String?
-  rotas                rotas[]
-
-  @@index([estacao, ativo, dataInicioVigencia])
-  @@index([tipoServico, propriedade, ativo])
-  @@index([tipoVeiculo, propriedadeVeiculo, ativo])
-}
-
-model usuarios {
-  id                          String                        @id
-  email                       String                        @unique
-  senha                       String
-  nome                        String
-  perfil                      usuarios_perfil
-  ativo                       Boolean                       @default(true)
-  createdAt                   DateTime                      @default(now())
-  updatedAt                   DateTime
-  audit_logs                  audit_logs[]
-  historico_status_motoristas historico_status_motoristas[]
-  motoristas                  motoristas?
-}
-
-enum tabelas_precos_tipoVeiculo {
-  MOTOCICLETA
-  CARRO_PASSEIO
-  CARGO_VAN
-  LARGE_VAN
-}
-
-enum historico_status_motoristas_statusAnterior {
-  ATIVO
-  INATIVO
-  SUSPENSO
-  ONBOARDING
-  EXCLUIDO
-}
-
-enum tabelas_precos_propriedadeVeiculo {
-  PROPRIO
-  TRANSPORTADORA
-}
-
-enum disponibilidades_ciclo {
-  CICLO_1
-  CICLO_2
-  SAME_DAY
-}
-
-enum historico_disponibilidades_ciclo {
-  CICLO_1
-  CICLO_2
-  SAME_DAY
-}
-
-enum historico_status_motoristas_statusNovo {
-  ATIVO
-  INATIVO
-  SUSPENSO
-  ONBOARDING
-  EXCLUIDO
-}
-
-enum ofertas_rotas_status {
-  PENDENTE
-  ACEITA
-  RECUSADA
-  EXPIRADA
-}
-
-enum tabelas_precos_tipoServico {
-  BIKE
-  SMALL_VAN
-  LARGE_VAN
-  HELPER
-  PASSENGER
-}
-
-enum rotas_tipoVeiculo {
-  MOTOCICLETA
-  CARRO_PASSEIO
-  CARGO_VAN
-  LARGE_VAN
-}
-
-enum tabelas_precos_propriedade {
-  PROPRIO
-  TRANSPORTADORA
-}
-
-enum usuarios_perfil {
-  DESPACHANTE_PLANEJADOR
-  MOTORISTA
-  ADMINISTRADOR
-}
-
-enum rotas_tipoRota {
-  ENTREGA
-  EXTRA
-  CUBOUT
-  RESGATE
-  NURSERY_LEVEL_1
-  NURSERY_LEVEL_2
-}
-
-enum rotas_cicloRota {
-  CICLO_1
-  CICLO_2
-  SAME_DAY
-}
-
-enum motoristas_tipoVeiculo {
-  MOTOCICLETA
-  CARRO_PASSEIO
-  CARGO_VAN
-  LARGE_VAN
-}
-
-enum motoristas_propriedadeVeiculo {
-  PROPRIO
-  TRANSPORTADORA
-}
-
-enum motoristas_status {
-  ATIVO
-  INATIVO
-  SUSPENSO
-  ONBOARDING
-  EXCLUIDO
-}
-
-enum rotas_status {
-  DISPONIVEL
-  OFERTADA
-  ACEITA
-  RECUSADA
-  CANCELADA
-  CONFIRMADA
-  EM_ANDAMENTO
-  CONCLUIDA
-  VALIDADA
+  @@map("metricas_entregas")
 }
