@@ -4,7 +4,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import api from '../services/api';
-import { TurnoDisponibilidade, TipoVeiculo } from '../types/disponibilidade';
+import { TurnoDisponibilidade, TipoVeiculo, CicloRota } from '../types/disponibilidade';
 
 interface ResumoTurno {
   [key: string]: number[]; // TipoVeiculo -> array de 7 dias
@@ -40,6 +40,13 @@ export function useResumoDisponibilidade(dataInicio: string, dataFim: string) {
     turno: TurnoDisponibilidade;
     tipoVeiculo: TipoVeiculo;
   } | null>(null);
+
+  // Backend retorna contagens por ciclo; convertemos para turnos exibidos na UI
+  const cicloParaTurnoMap: Record<CicloRota, TurnoDisponibilidade> = {
+    [CicloRota.CICLO_1]: TurnoDisponibilidade.MATUTINO,
+    [CicloRota.CICLO_2]: TurnoDisponibilidade.VESPERTINO,
+    [CicloRota.SAME_DAY]: TurnoDisponibilidade.NOTURNO
+  };
 
   /**
    * Buscar resumo consolidado
@@ -130,15 +137,22 @@ export function useResumoDisponibilidade(dataInicio: string, dataFim: string) {
       const diaIndex = datas.indexOf(dataStr);
       if (diaIndex === -1) return;
 
-      Object.entries(tiposVeiculo).forEach(([tipoVeiculo, turnos]: [string, any]) => {
-        Object.entries(turnos).forEach(([turno, quantidade]: [string, any]) => {
-          const turnoKey = turno as TurnoDisponibilidade;
+      Object.entries(tiposVeiculo).forEach(([tipoVeiculo, ciclos]: [string, any]) => {
+        Object.entries(ciclos).forEach(([ciclo, quantidade]: [string, any]) => {
+          const cicloKey = ciclo as CicloRota;
+          const turnoKey = cicloParaTurnoMap[cicloKey];
           const veiculoKey = tipoVeiculo as TipoVeiculo;
-          
-          if (resultado.turnos[turnoKey] && resultado.turnos[turnoKey][veiculoKey]) {
-            resultado.turnos[turnoKey][veiculoKey][diaIndex] = quantidade;
-            resultado.turnos[turnoKey].subtotal[diaIndex] += quantidade;
-            resultado.totalGeral[diaIndex] += quantidade;
+          const quantidadeNumerica =
+            typeof quantidade === 'number' ? quantidade : Number(quantidade) || 0;
+
+          if (
+            turnoKey &&
+            resultado.turnos[turnoKey] &&
+            resultado.turnos[turnoKey][veiculoKey]
+          ) {
+            resultado.turnos[turnoKey][veiculoKey][diaIndex] = quantidadeNumerica;
+            resultado.turnos[turnoKey].subtotal[diaIndex] += quantidadeNumerica;
+            resultado.totalGeral[diaIndex] += quantidadeNumerica;
           }
         });
       });
