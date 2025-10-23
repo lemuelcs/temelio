@@ -50,8 +50,8 @@ export default function Alertas() {
     queryKey: ['alertas-compliance'],
     queryFn: async () => {
       try {
-        // Tentar buscar motoristas (pode retornar 403 se sem permissão)
-        const response = await api.get('/motoristas');
+        // Buscar motoristas do endpoint de gestão
+        const response = await api.get('/gestao/motoristas');
         
         // Tratar diferentes estruturas de resposta da API
         const motoristas = response.data?.data?.motoristas || 
