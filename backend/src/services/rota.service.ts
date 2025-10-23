@@ -71,11 +71,20 @@ class RotaService {
     }
 
     // Buscar tabela de preços
-    const propriedadeVeiculo = veiculoTransportadora 
-      ? PropriedadeVeiculo.TRANSPORTADORA 
+    const propriedadeVeiculo = veiculoTransportadora
+      ? PropriedadeVeiculo.TRANSPORTADORA
       : PropriedadeVeiculo.PROPRIO;
 
-    const tabelaPreco = await prisma.tabelaPreco.findFirst({
+    // Mapeamento de TipoVeiculo para TipoServico
+    const TIPO_VEICULO_TO_SERVICO: Record<string, string[]> = {
+      'MOTOCICLETA': ['BIKE'],
+      'CARRO_PASSEIO': ['PASSENGER'],
+      'CARGO_VAN': ['CARGO_VAN', 'SMALL_VAN'],
+      'LARGE_VAN': ['LARGE_VAN'],
+    };
+
+    // Buscar primeiro pelos campos legados (tipoVeiculo/propriedadeVeiculo)
+    let tabelaPreco = await prisma.tabelaPreco.findFirst({
       where: {
         tipoVeiculo,
         propriedadeVeiculo,
@@ -87,6 +96,29 @@ class RotaService {
         ]
       }
     });
+
+    // Se não encontrar, buscar pelos campos novos (tipoServico/propriedade)
+    if (!tabelaPreco) {
+      const tiposServico = TIPO_VEICULO_TO_SERVICO[tipoVeiculo] || [];
+      const propriedade = veiculoTransportadora ? 'TRANSPORTADORA' : 'PROPRIO';
+
+      for (const tipoServico of tiposServico) {
+        tabelaPreco = await prisma.tabelaPreco.findFirst({
+          where: {
+            tipoServico: tipoServico as any,
+            propriedade: propriedade as any,
+            ativo: true,
+            dataInicioVigencia: { lte: new Date() },
+            OR: [
+              { dataFimVigencia: null },
+              { dataFimVigencia: { gte: new Date() } }
+            ]
+          }
+        });
+
+        if (tabelaPreco) break;
+      }
+    }
 
     if (!tabelaPreco) {
       throw new AppError('Tabela de preços não encontrada', 404);
@@ -406,6 +438,72 @@ class RotaService {
 
     if (rota.status !== StatusRota.DISPONIVEL) {
       throw new AppError('Apenas rotas disponíveis podem ser editadas', 400);
+    }
+
+    // Se estiver mudando tipoVeiculo ou veiculoTransportadora, validar tabela de preços
+    if (data.tipoVeiculo || data.veiculoTransportadora !== undefined) {
+      const tipoVeiculo = data.tipoVeiculo || rota.tipoVeiculo;
+      const veiculoTransportadora = data.veiculoTransportadora !== undefined
+        ? data.veiculoTransportadora
+        : rota.veiculoTransportadora;
+
+      const propriedadeVeiculo = veiculoTransportadora
+        ? PropriedadeVeiculo.TRANSPORTADORA
+        : PropriedadeVeiculo.PROPRIO;
+
+      // Mapeamento de TipoVeiculo para TipoServico
+      const TIPO_VEICULO_TO_SERVICO: Record<string, string[]> = {
+        'MOTOCICLETA': ['BIKE'],
+        'CARRO_PASSEIO': ['PASSENGER'],
+        'CARGO_VAN': ['CARGO_VAN', 'SMALL_VAN'],
+        'LARGE_VAN': ['LARGE_VAN'],
+      };
+
+      // Buscar primeiro pelos campos legados
+      let tabelaPreco = await prisma.tabelaPreco.findFirst({
+        where: {
+          tipoVeiculo,
+          propriedadeVeiculo,
+          ativo: true,
+          dataInicioVigencia: { lte: new Date() },
+          OR: [
+            { dataFimVigencia: null },
+            { dataFimVigencia: { gte: new Date() } }
+          ]
+        }
+      });
+
+      // Se não encontrar, buscar pelos campos novos
+      if (!tabelaPreco) {
+        const tiposServico = TIPO_VEICULO_TO_SERVICO[tipoVeiculo] || [];
+        const propriedade = veiculoTransportadora ? 'TRANSPORTADORA' : 'PROPRIO';
+
+        for (const tipoServico of tiposServico) {
+          tabelaPreco = await prisma.tabelaPreco.findFirst({
+            where: {
+              tipoServico: tipoServico as any,
+              propriedade: propriedade as any,
+              ativo: true,
+              dataInicioVigencia: { lte: new Date() },
+              OR: [
+                { dataFimVigencia: null },
+                { dataFimVigencia: { gte: new Date() } }
+              ]
+            }
+          });
+
+          if (tabelaPreco) break;
+        }
+      }
+
+      if (!tabelaPreco) {
+        throw new AppError('Tabela de preços não encontrada', 404);
+      }
+
+      // Atualizar tabelaPrecosId se foi encontrada uma nova tabela
+      if (tabelaPreco.id !== data.tabelaPrecosId) {
+        data.tabelaPrecosId = tabelaPreco.id;
+      }
     }
 
     const rotaAtualizada = await prisma.rota.update({
