@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, Search, Edit, CheckCircle, XCircle, User, RefreshCw, MessageCircle } from 'lucide-react';
 import api from '../../services/api';
@@ -12,6 +12,7 @@ interface Motorista {
   email: string;
   celular: string;
   chavePix?: string;
+  dataNascimento?: string;
   cep?: string;
   logradouro?: string;
   numero?: string;
@@ -40,6 +41,7 @@ interface Motorista {
     razaoSocialMEI?: string;
   }>;
   createdAt: string;
+  updatedAt?: string;
 }
 
 // Funções auxiliares para máscaras
@@ -111,7 +113,7 @@ export default function Motoristas() {
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterStatus, setFilterStatus] = useState<string>('');
+  const [filterStatus, setFilterStatus] = useState<string>('ATIVOS_ONBOARDING');
   const [filterTipo, setFilterTipo] = useState<string>('');
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [selectedMotoristaId, setSelectedMotoristaId] = useState<string | null>(null);
@@ -141,16 +143,47 @@ export default function Motoristas() {
     },
   });
 
+  const motoristasOrdenados = useMemo(() => {
+    const parseDate = (value?: string) => {
+      if (!value) return 0;
+      const parsed = new Date(value).getTime();
+      return Number.isNaN(parsed) ? 0 : parsed;
+    };
+
+    return [...motoristas].sort((a: any, b: any) => {
+      const dataB = parseDate(b.updatedAt || b.dataAtualizacao || b.createdAt);
+      const dataA = parseDate(a.updatedAt || a.dataAtualizacao || a.createdAt);
+      return dataB - dataA;
+    });
+  }, [motoristas]);
+
   // Filtrar motoristas
-  const filteredMotoristas = motoristas.filter((m: any) => {
-    const matchesSearch = (m.nomeCompleto || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         (m.cpf || '').includes(searchTerm) ||
-                         (m.email || '').toLowerCase().includes(searchTerm.toLowerCase());
-    // Se não houver filtro de status, mostrar apenas ATIVO e ONBOARDING
-    const matchesStatus = filterStatus ? m.status === filterStatus : (m.status === 'ATIVO' || m.status === 'ONBOARDING');
-    const matchesTipo = !filterTipo || m.tipoVeiculo === filterTipo;
-    return matchesSearch && matchesStatus && matchesTipo;
-  });
+  const filteredMotoristas = useMemo(() => {
+    const normalizedSearch = searchTerm.trim().toLowerCase();
+    const statusFiltro = (() => {
+      if (!filterStatus || filterStatus === 'ATIVOS_ONBOARDING') {
+        return ['ATIVO', 'ONBOARDING'];
+      }
+      if (filterStatus === 'TODOS') {
+        return null;
+      }
+      return [filterStatus];
+    })();
+
+    return motoristasOrdenados.filter((m: any) => {
+      const matchesSearch =
+        !normalizedSearch ||
+        (m.nomeCompleto || '').toLowerCase().includes(normalizedSearch) ||
+        (m.cpf || '').includes(normalizedSearch) ||
+        (m.email || '').toLowerCase().includes(normalizedSearch) ||
+        (m.celular || '').includes(normalizedSearch) ||
+        (m.transporterId || '').toLowerCase().includes(normalizedSearch);
+
+      const matchesStatus = !statusFiltro ? true : statusFiltro.includes(m.status);
+      const matchesTipo = !filterTipo || m.tipoVeiculo === filterTipo;
+      return matchesSearch && matchesStatus && matchesTipo;
+    });
+  }, [motoristasOrdenados, searchTerm, filterStatus, filterTipo]);
 
   const handleEdit = (id: string) => {
     setEditingId(id);
@@ -212,12 +245,13 @@ export default function Motoristas() {
             onChange={(e) => setFilterStatus(e.target.value)}
             className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           >
-            <option value="">Todos os status</option>
-            <option value="ONBOARDING">Onboarding</option>
-            <option value="ATIVO">Ativos</option>
+            <option value="ATIVOS_ONBOARDING">Ativos e Onboarding</option>
+            <option value="ATIVO">Somente Ativos</option>
+            <option value="ONBOARDING">Somente Onboarding</option>
             <option value="INATIVO">Inativos</option>
             <option value="SUSPENSO">Suspensos</option>
             <option value="EXCLUIDO">Excluídos</option>
+            <option value="TODOS">Todos os status</option>
           </select>
 
           <select
@@ -269,8 +303,10 @@ export default function Motoristas() {
                   const elegivel = cnhValida && brkValido && temDocumentos;
                   
                   // WhatsApp link
-                  const celularLimpo = motorista.celular.replace(/\D/g, '');
-                  const whatsappLink = `https://api.whatsapp.com/send?phone=55${celularLimpo}&text=Aqui+%C3%A9+a+Temelio.+Vai+tudo+bem%3F+%F0%9F%98%89`;
+                  const celularLimpo = (motorista.celular || '').replace(/\D/g, '');
+                  const whatsappLink = celularLimpo
+                    ? `https://api.whatsapp.com/send?phone=55${celularLimpo}&text=Aqui+%C3%A9+a+Temelio.+Vai+tudo+bem%3F+%F0%9F%98%89`
+                    : null;
                   
                   return (
                     <tr key={motorista.id} className="hover:bg-gray-50">
@@ -308,11 +344,20 @@ export default function Motoristas() {
                       </td>
                       <td className="px-6 py-4 text-center">
                         <a 
-                          href={whatsappLink}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center justify-center w-10 h-10 bg-green-500 hover:bg-green-600 text-white rounded-full transition"
-                          title="Enviar WhatsApp"
+                          href={whatsappLink || '#'}
+                          onClick={(e) => {
+                            if (!whatsappLink) {
+                              e.preventDefault();
+                            }
+                          }}
+                          target={whatsappLink ? '_blank' : undefined}
+                          rel={whatsappLink ? 'noopener noreferrer' : undefined}
+                          className={`inline-flex items-center justify-center w-10 h-10 rounded-full transition ${
+                            whatsappLink
+                              ? 'bg-green-500 hover:bg-green-600 text-white'
+                              : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                          }`}
+                          title={whatsappLink ? 'Enviar WhatsApp' : 'Celular não disponível'}
                         >
                           <MessageCircle className="w-5 h-5" />
                         </a>
@@ -514,14 +559,14 @@ function MotoristaModal({ motoristaId, onClose }: { motoristaId: string | null; 
     queryFn: async () => {
       if (!motoristaId) return null;
       const response = await api.get(`/gestao/motoristas/${motoristaId}`);
-      return response.data?.data?.motorista || response.data?.motorista || response.data;
+      return response.data?.data ?? response.data;
     },
     enabled: !!motoristaId,
   });
 
   useEffect(() => {
     if (motoristaData && isEditing) {
-      const doc = motoristaData.documentos?.[0] || {};
+      const doc = motoristaData.documentos?.[0] || motoristaData.documento || {};
       const contrato = motoristaData.contratos?.[0] || {};
 
       setFormData({
@@ -549,7 +594,7 @@ function MotoristaModal({ motoristaId, onClose }: { motoristaId: string | null; 
         anoLicenciamento: doc.anoLicenciamento || new Date().getFullYear(),
         dataVerificacaoBRK: doc.dataVerificacaoBRK ? doc.dataVerificacaoBRK.split('T')[0] : '',
         proximaVerificacaoBRK: doc.proximaVerificacaoBRK ? doc.proximaVerificacaoBRK.split('T')[0] : '',
-        statusBRK: doc.statusBRK || false,
+        statusBRK: Boolean(doc.statusBRK),
         numeroContrato: contrato.numeroContrato || '',
         dataAssinatura: contrato.dataAssinatura ? contrato.dataAssinatura.split('T')[0] : '',
         dataVigenciaInicial: contrato.dataVigenciaInicial ? contrato.dataVigenciaInicial.split('T')[0] : '',
@@ -765,6 +810,7 @@ function MotoristaModal({ motoristaId, onClose }: { motoristaId: string | null; 
                   <option value="ATIVO">Ativo</option>
                   <option value="INATIVO">Inativo</option>
                   <option value="SUSPENSO">Suspenso</option>
+                  <option value="EXCLUIDO">Excluído</option>
                 </select>
               </div>
               {isEditing && (

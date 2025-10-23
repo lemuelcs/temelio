@@ -5,21 +5,23 @@ import api from '../../services/api';
 
 // Valores padrão (fallback se não conseguir buscar do BD)
 const VALORES_PADRAO = {
-  MOTOCICLETA: 27.00,
-  CARRO_PASSEIO: 37.00,
-  CARGO_VAN: 40.00,
-  LARGE_VAN: 52.50,
-  TRANSPORTADORA: 25.00,
+  MOTOCICLETA: 27.0,
+  CARRO_PASSEIO: 37.0,
+  CARGO_VAN: 40.0,
+  LARGE_VAN: 52.5,
+  TRANSPORTADORA: 25.0,
   KM: 0.64,
 };
 
 // Mapeamento entre tipos de veículo do frontend e tipos de serviço da API
-const TIPO_VEICULO_TO_SERVICO: Record<string, string> = {
-  MOTOCICLETA: 'BIKE',
-  CARRO_PASSEIO: 'PASSENGER',
-  CARGO_VAN: 'SMALL_VAN',
-  LARGE_VAN: 'LARGE_VAN',
+const TIPO_VEICULO_TO_SERVICO: Record<string, string[]> = {
+  MOTOCICLETA: ['BIKE'],
+  CARRO_PASSEIO: ['PASSENGER'],
+  CARGO_VAN: ['CARGO_VAN', 'SMALL_VAN'],
+  LARGE_VAN: ['LARGE_VAN'],
 };
+
+const TIPOS_SERVICO_PERMITIDOS = new Set(['BIKE', 'PASSENGER', 'CARGO_VAN', 'SMALL_VAN', 'LARGE_VAN']);
 
 interface Rota {
   id: string;
@@ -44,6 +46,26 @@ interface Rota {
   };
 }
 
+type TabelaPrecosProcessada = {
+  precos: Record<string, Record<string, { valorHora: number; tabelaId: string | null }>>;
+  valorKm: number;
+};
+
+const toHourMinute = (value?: string | null) => {
+  if (!value) return '';
+
+  const date = new Date(value);
+  if (!Number.isNaN(date.getTime())) {
+    return date.toISOString().substring(11, 16);
+  }
+
+  if (typeof value === 'string' && value.includes(':')) {
+    return value.substring(0, 5);
+  }
+
+  return '';
+};
+
 export default function Rotas() {
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -67,7 +89,11 @@ export default function Rotas() {
   }, []);
 
   // Buscar tabela de preços da estação DBS5
-  const { data: tabelaPrecos = null } = useQuery({
+  const {
+    data: tabelaPrecos = null,
+    isLoading: carregandoTabelaPrecos,
+    isError: erroTabelaPrecos,
+  } = useQuery({
     queryKey: ['tabela-precos-dbs5'],
     queryFn: async () => {
       try {
@@ -82,20 +108,46 @@ export default function Rotas() {
         const tabelas = response.data?.data?.tabelas || response.data?.tabelas || [];
 
         // Criar mapa de preços por tipoServico e propriedade
-        const precosMap: Record<string, Record<string, number>> = {};
+        const precosMap: Record<
+          string,
+          Record<string, { valorHora: number; tabelaId: string | null }>
+        > = {};
+        let valorKmPadrao: number | null = null;
 
         tabelas.forEach((tabela: any) => {
-          if (tabela.tipoServico && tabela.propriedade) {
-            if (!precosMap[tabela.tipoServico]) {
-              precosMap[tabela.tipoServico] = {};
+          const tipoServico = tabela.tipoServico || tabela.tipoVeiculo;
+          const propriedade = tabela.propriedade || tabela.propriedadeVeiculo;
+
+          if (!tipoServico || !propriedade) {
+            return;
+          }
+
+          if (!TIPOS_SERVICO_PERMITIDOS.has(tipoServico)) {
+            return;
+          }
+
+          if (!precosMap[tipoServico]) {
+            precosMap[tipoServico] = {};
+          }
+
+          const valorHora = tabela.valorHora ?? tabela.valorHoraDSP;
+          const valorHoraNumber = valorHora ? parseFloat(valorHora) : 0;
+          precosMap[tipoServico][propriedade] = {
+            valorHora: valorHoraNumber,
+            tabelaId: tabela.id || null,
+          };
+
+          if (valorKmPadrao === null) {
+            const valorKm = tabela.valorKm ?? tabela.valorAjudaCombustivel;
+            if (valorKm !== undefined && valorKm !== null) {
+              valorKmPadrao = parseFloat(valorKm);
             }
-            precosMap[tabela.tipoServico][tabela.propriedade] = parseFloat(tabela.valorHora);
           }
         });
 
         return {
           precos: precosMap,
-          valorKm: tabelas[0]?.valorKm ? parseFloat(tabelas[0].valorKm) : VALORES_PADRAO.KM
+          valorKm: valorKmPadrao ?? VALORES_PADRAO.KM
         };
       } catch (error) {
         console.error('Erro ao buscar tabela de preços:', error);
@@ -210,10 +262,7 @@ export default function Rotas() {
     return new Date(dateString).toLocaleDateString('pt-BR');
   };
 
-  const formatTime = (timeString: string) => {
-    if (!timeString) return '';
-    return timeString.substring(0, 5); // HH:MM
-  };
+  const formatTime = (timeString: string) => toHourMinute(timeString);
 
   return (
     <div className="space-y-6">
@@ -234,6 +283,13 @@ export default function Rotas() {
           Nova Oferta de Rota
         </button>
       </div>
+
+      {erroTabelaPrecos && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+          <p className="text-sm font-medium">Não foi possível carregar a tabela de preços da estação DBS5.</p>
+          <p className="text-xs mt-1">As rotas podem apresentar valores padrão. Tente recarregar a página ou verifique o backend.</p>
+        </div>
+      )}
 
       {/* Filtros */}
       <div className="bg-white rounded-lg shadow p-4">
@@ -437,6 +493,7 @@ export default function Rotas() {
         <RotaModal
           rotaId={editingId}
           tabelaPrecos={tabelaPrecos}
+          carregandoTabelaPrecos={carregandoTabelaPrecos}
           onClose={() => {
             setShowModal(false);
             setEditingId(null);
@@ -448,9 +505,41 @@ export default function Rotas() {
 }
 
 // Modal de Criação/Edição
-function RotaModal({ rotaId, tabelaPrecos, onClose }: { rotaId: string | null; tabelaPrecos: any; onClose: () => void }) {
+function RotaModal({
+  rotaId,
+  tabelaPrecos,
+  carregandoTabelaPrecos,
+  onClose,
+}: {
+  rotaId: string | null;
+  tabelaPrecos: TabelaPrecosProcessada | null;
+  carregandoTabelaPrecos: boolean;
+  onClose: () => void;
+}) {
   const queryClient = useQueryClient();
   const isEditing = !!rotaId;
+
+  const findTabelaInfo = (tipoVeiculo: string, veiculoTransportadora: boolean) => {
+    if (!tabelaPrecos) {
+      return null;
+    }
+
+    const tiposServicoPossiveis = TIPO_VEICULO_TO_SERVICO[tipoVeiculo] || [];
+    const propriedade = veiculoTransportadora ? 'TRANSPORTADORA' : 'PROPRIO';
+
+    for (const tipoServico of tiposServicoPossiveis) {
+      const info = tabelaPrecos.precos?.[tipoServico]?.[propriedade];
+      if (info && info.valorHora > 0) {
+        return {
+          ...info,
+          tipoServico,
+          propriedade,
+        };
+      }
+    }
+
+    return null;
+  };
 
   // Função para obter valor da tabela de preços
   const getValorHora = (tipoVeiculo: string, veiculoTransportadora: boolean): number => {
@@ -460,10 +549,12 @@ function RotaModal({ rotaId, tabelaPrecos, onClose }: { rotaId: string | null; t
       return VALORES_PADRAO[tipoVeiculo as keyof typeof VALORES_PADRAO] || 0;
     }
 
-    const tipoServico = TIPO_VEICULO_TO_SERVICO[tipoVeiculo];
-    const propriedade = veiculoTransportadora ? 'TRANSPORTADORA' : 'PROPRIO';
+    const infoEncontrada = findTabelaInfo(tipoVeiculo, veiculoTransportadora);
+    if (infoEncontrada) {
+      return infoEncontrada.valorHora;
+    }
 
-    return tabelaPrecos.precos?.[tipoServico]?.[propriedade] || VALORES_PADRAO[tipoVeiculo as keyof typeof VALORES_PADRAO] || 0;
+    return VALORES_PADRAO[tipoVeiculo as keyof typeof VALORES_PADRAO] || 0;
   };
 
   const getValorKm = (): number => {
@@ -492,6 +583,10 @@ function RotaModal({ rotaId, tabelaPrecos, onClose }: { rotaId: string | null; t
     bonusKmProjetado: 0,
     valorProjetado: 0,
     valorTotalProjetado: 0,
+    valorKmReferencia: 0,
+    tabelaPrecosId: null as string | null,
+    tipoServicoAplicado: '',
+    propriedadeAplicada: '',
   });
 
   // Buscar locais
@@ -506,7 +601,8 @@ function RotaModal({ rotaId, tabelaPrecos, onClose }: { rotaId: string | null; t
 
   // Calcular valores automaticamente
   useEffect(() => {
-    const valorHora = getValorHora(formData.tipoVeiculo, formData.veiculoTransportadora);
+    const infoTabela = findTabelaInfo(formData.tipoVeiculo, formData.veiculoTransportadora);
+    const valorHora = infoTabela?.valorHora ?? getValorHora(formData.tipoVeiculo, formData.veiculoTransportadora);
     const valorKm = getValorKm();
 
     const valorBase = valorHora * formData.tamanhoHoras;
@@ -522,6 +618,10 @@ function RotaModal({ rotaId, tabelaPrecos, onClose }: { rotaId: string | null; t
       bonusKmProjetado,
       valorProjetado,
       valorTotalProjetado,
+      valorKmReferencia: valorKm,
+      tabelaPrecosId: infoTabela?.tabelaId ?? null,
+      tipoServicoAplicado: infoTabela?.tipoServico ?? '',
+      propriedadeAplicada: infoTabela?.propriedade ?? (formData.veiculoTransportadora ? 'TRANSPORTADORA' : 'PROPRIO'),
     });
   }, [
     formData.tipoVeiculo,
@@ -558,8 +658,8 @@ function RotaModal({ rotaId, tabelaPrecos, onClose }: { rotaId: string | null; t
     if (rotaData && isEditing) {
       setFormData({
         dataRota: rotaData.dataRota?.split('T')[0] || new Date().toISOString().split('T')[0],
-        horaInicio: rotaData.horaInicio?.substring(0, 5) || '08:00',
-        horaFim: rotaData.horaFim?.substring(0, 5) || '',
+        horaInicio: toHourMinute(rotaData.horaInicio) || '08:00',
+        horaFim: toHourMinute(rotaData.horaFim),
         tipoVeiculo: rotaData.tipoVeiculo || 'CARGO_VAN',
         tipoRota: rotaData.tipoRota || 'ENTREGA',
         cicloRota: rotaData.cicloRota || 'CICLO_1',
@@ -590,9 +690,10 @@ function RotaModal({ rotaId, tabelaPrecos, onClose }: { rotaId: string | null; t
         bonusFixo: data.bonusFixo,
         valorProjetado: valorCalculado.valorProjetado,
         kmProjetado: data.kmProjetado,
-        valorKm: getValorKm(),
+        valorKm: valorCalculado.valorKmReferencia,
         valorTotalRota: valorCalculado.valorTotalProjetado,
         localId: data.localId,
+        tabelaPrecosId: valorCalculado.tabelaPrecosId,
         status: 'DISPONIVEL', // Status inicial sempre DISPONIVEL
       };
 
@@ -617,6 +718,17 @@ function RotaModal({ rotaId, tabelaPrecos, onClose }: { rotaId: string | null; t
     
     if (!formData.localId) {
       alert('Selecione um local de origem!');
+      return;
+    }
+
+    if (carregandoTabelaPrecos) {
+      alert('Aguarde o carregamento da tabela de preços antes de salvar.');
+      return;
+    }
+
+    const tabelaInfo = findTabelaInfo(formData.tipoVeiculo, formData.veiculoTransportadora);
+    if (!tabelaInfo) {
+      alert('Não encontramos tabela de preços vigente para esta combinação de veículo e propriedade. Verifique a tabela de preços da estação DBS5.');
       return;
     }
 
@@ -852,6 +964,16 @@ function RotaModal({ rotaId, tabelaPrecos, onClose }: { rotaId: string | null; t
                 <span className="text-gray-600">Valor/hora:</span>
                 <span className="font-medium">{formatCurrency(valorCalculado.valorHora)}</span>
               </div>
+              <div className="flex justify-between text-xs text-gray-500">
+                <span>Tabela aplicada:</span>
+                <span className="font-medium">
+                  {valorCalculado.tabelaPrecosId
+                    ? `${valorCalculado.tipoServicoAplicado || '—'} · ${valorCalculado.propriedadeAplicada || 'PROPRIO'}`
+                    : carregandoTabelaPrecos
+                      ? 'Carregando...'
+                      : 'Não encontrada'}
+                </span>
+              </div>
               <div className="flex justify-between">
                 <span className="text-gray-600">Valor base ({formData.tamanhoHoras}h):</span>
                 <span className="font-medium">{formatCurrency(valorCalculado.valorBase)}</span>
@@ -873,7 +995,9 @@ function RotaModal({ rotaId, tabelaPrecos, onClose }: { rotaId: string | null; t
                 <span className="font-bold text-gray-900">{formatCurrency(valorCalculado.valorProjetado)}</span>
               </div>
               <div className="flex justify-between text-green-700">
-                <span>+ Bônus KM projetado ({formData.kmProjetado}km):</span>
+                <span>
+                  + KM projetado ({formData.kmProjetado} km × {formatCurrency(valorCalculado.valorKmReferencia)})
+                </span>
                 <span className="font-medium">{formatCurrency(valorCalculado.bonusKmProjetado)}</span>
               </div>
               <div className="flex justify-between pt-2 border-t border-blue-300">
@@ -883,6 +1007,12 @@ function RotaModal({ rotaId, tabelaPrecos, onClose }: { rotaId: string | null; t
               <p className="text-xs text-gray-500 mt-2">
                 * Valor final será calculado no D+1 com KM real rodado
               </p>
+              {!carregandoTabelaPrecos && !valorCalculado.tabelaPrecosId && (
+                <p className="text-xs text-red-600">
+                  ⚠️ Não encontramos tabela de preços vigente para esta combinação na estação DBS5.
+                  Ajuste o tipo de veículo/propriedade ou cadastre a tabela correspondente.
+                </p>
+              )}
             </div>
           </div>
 
