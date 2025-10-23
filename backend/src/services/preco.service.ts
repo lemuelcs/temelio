@@ -1,10 +1,10 @@
 import prisma from '../config/database';
 import { AppError } from '../middlewares/error.middleware';
-import { TipoVeiculo, TipoPropriedadeVeiculo } from '@prisma/client';
+import { TipoVeiculo, PropriedadeVeiculo } from '@prisma/client';
 
 interface CriarTabelaPrecoData {
   tipoVeiculo: TipoVeiculo;
-  propriedadeVeiculo: TipoPropriedadeVeiculo;
+  propriedadeVeiculo: PropriedadeVeiculo;
   valorHora: number;
   valorCancelamentoHora: number;
   valorKm: number;
@@ -58,7 +58,7 @@ class PrecoService {
   // Listar tabelas de preços
   async listar(filtros: {
     tipoVeiculo?: TipoVeiculo;
-    propriedadeVeiculo?: TipoPropriedadeVeiculo;
+    propriedadeVeiculo?: PropriedadeVeiculo;
     ativo?: boolean;
   } = {}) {
     const where: any = {};
@@ -88,7 +88,7 @@ class PrecoService {
   }
 
   // Buscar tabela de preços ativa para um tipo de veículo
-  async buscarAtiva(tipoVeiculo: TipoVeiculo, propriedadeVeiculo: TipoPropriedadeVeiculo) {
+  async buscarAtiva(tipoVeiculo: TipoVeiculo, propriedadeVeiculo: PropriedadeVeiculo) {
     const tabela = await prisma.tabelaPreco.findFirst({
       where: {
         tipoVeiculo,
@@ -162,28 +162,28 @@ class PrecoService {
       // Veículos Próprios
       {
         tipoVeiculo: TipoVeiculo.MOTOCICLETA,
-        propriedadeVeiculo: TipoPropriedadeVeiculo.PROPRIO,
+        propriedadeVeiculo: PropriedadeVeiculo.PROPRIO,
         valorHora: 27.00,
         valorCancelamentoHora: 6.75,
         valorKm: 0.64
       },
       {
         tipoVeiculo: TipoVeiculo.CARRO_PASSEIO,
-        propriedadeVeiculo: TipoPropriedadeVeiculo.PROPRIO,
+        propriedadeVeiculo: PropriedadeVeiculo.PROPRIO,
         valorHora: 37.00,
         valorCancelamentoHora: 9.25,
         valorKm: 0.64
       },
       {
         tipoVeiculo: TipoVeiculo.CARGO_VAN,
-        propriedadeVeiculo: TipoPropriedadeVeiculo.PROPRIO,
+        propriedadeVeiculo: PropriedadeVeiculo.PROPRIO,
         valorHora: 40.00,
         valorCancelamentoHora: 10.00,
         valorKm: 0.64
       },
       {
         tipoVeiculo: TipoVeiculo.LARGE_VAN,
-        propriedadeVeiculo: TipoPropriedadeVeiculo.PROPRIO,
+        propriedadeVeiculo: PropriedadeVeiculo.PROPRIO,
         valorHora: 52.50,
         valorCancelamentoHora: 13.25,
         valorKm: 0.64
@@ -191,14 +191,14 @@ class PrecoService {
       // Veículos da Transportadora
       {
         tipoVeiculo: TipoVeiculo.CARGO_VAN,
-        propriedadeVeiculo: TipoPropriedadeVeiculo.TRANSPORTADORA,
+        propriedadeVeiculo: PropriedadeVeiculo.TRANSPORTADORA,
         valorHora: 25.00,
         valorCancelamentoHora: 6.25,
         valorKm: 0.64
       },
       {
         tipoVeiculo: TipoVeiculo.LARGE_VAN,
-        propriedadeVeiculo: TipoPropriedadeVeiculo.TRANSPORTADORA,
+        propriedadeVeiculo: PropriedadeVeiculo.TRANSPORTADORA,
         valorHora: 25.00,
         valorCancelamentoHora: 6.25,
         valorKm: 0.64

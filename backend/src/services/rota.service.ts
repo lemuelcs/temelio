@@ -1,6 +1,6 @@
 import prisma from '../config/database';
 import { AppError } from '../middlewares/error.middleware';
-import { TipoVeiculo, TipoRota, CicloRota, StatusRota, StatusOferta, TipoPropriedadeVeiculo } from '@prisma/client';
+import { TipoVeiculo, TipoRota, CicloRota, StatusRota, StatusOferta, PropriedadeVeiculo } from '@prisma/client';
 
 interface CriarRotaData {
   dataRota: Date;
@@ -72,8 +72,8 @@ class RotaService {
 
     // Buscar tabela de preços
     const propriedadeVeiculo = veiculoTransportadora 
-      ? TipoPropriedadeVeiculo.TRANSPORTADORA 
-      : TipoPropriedadeVeiculo.PROPRIO;
+      ? PropriedadeVeiculo.TRANSPORTADORA 
+      : PropriedadeVeiculo.PROPRIO;
 
     const tabelaPreco = await prisma.tabelaPreco.findFirst({
       where: {

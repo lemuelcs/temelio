@@ -40,8 +40,8 @@ class MotoristaController {
           take,
           include: {
             usuario: { select: { email: true, perfil: true } },
-            documentos_motoristas: true,
-            contratos_motoristas: { where: { ativo: true }, take: 1, orderBy: { createdAt: 'desc' } }
+            documento: true,
+            contratos: { where: { ativo: true }, take: 1, orderBy: { createdAt: 'desc' } }
           },
           orderBy: [{ pontuacao: 'desc' }, { nomeCompleto: 'asc' }]
         }),
@@ -74,8 +74,8 @@ class MotoristaController {
         where: { id },
         include: {
           usuario: { select: { email: true, perfil: true } },
-          documentos_motoristas: true,
-          contratos_motoristas: { where: { ativo: true }, orderBy: { createdAt: 'desc' } }
+          documento: true,
+          contratos: { where: { ativo: true }, orderBy: { createdAt: 'desc' } }
         }
       });
 
@@ -149,7 +149,7 @@ class MotoristaController {
 
         // 3. Criar documentos
         if (dados.numeroCNH || dados.validadeCNH || dados.dataVerificacaoBRK) {
-          await tx.documentos_motoristas.create({
+          await tx.documento.create({
             data: {
               motoristaId: motorista.id,
               numeroCNH: dados.numeroCNH,
@@ -164,7 +164,7 @@ class MotoristaController {
 
         // 4. Criar contrato MEI
         if (dados.cnpjMEI || dados.razaoSocialMEI || dados.numeroContrato) {
-          await tx.contratos_motoristas.create({
+          await tx.contratos.create({
             data: {
               motoristaId: motorista.id,
               numeroContrato: dados.numeroContrato || `CONTRATO-${Date.now()}`,
@@ -227,10 +227,10 @@ class MotoristaController {
         });
 
         // 2. Atualizar/Criar documentos
-        const documentoExiste = await tx.documentos_motoristas.findUnique({ where: { motoristaId: id } });
+        const documentoExiste = await tx.documento.findUnique({ where: { motoristaId: id } });
 
         if (documentoExiste) {
-          await tx.documentos_motoristas.update({
+          await tx.documento.update({
             where: { motoristaId: id },
             data: {
               numeroCNH: dados.numeroCNH,
@@ -242,7 +242,7 @@ class MotoristaController {
             }
           });
         } else if (dados.numeroCNH || dados.validadeCNH || dados.dataVerificacaoBRK) {
-          await tx.documentos_motoristas.create({
+          await tx.documento.create({
             data: {
               motoristaId: id,
               numeroCNH: dados.numeroCNH,
@@ -257,14 +257,14 @@ class MotoristaController {
 
         // 3. Atualizar contrato ativo ou criar novo
         if (dados.cnpjMEI || dados.razaoSocialMEI || dados.numeroContrato) {
-          const contratoAtivo = await tx.contratos_motoristas.findFirst({
+          const contratoAtivo = await tx.contratos.findFirst({
             where: { motoristaId: id, ativo: true },
             orderBy: { createdAt: 'desc' }
           });
 
           if (contratoAtivo) {
             // Atualizar contrato existente
-            await tx.contratos_motoristas.update({
+            await tx.contratos.update({
               where: { id: contratoAtivo.id },
               data: {
                 numeroContrato: dados.numeroContrato || contratoAtivo.numeroContrato,
@@ -276,7 +276,7 @@ class MotoristaController {
             });
           } else {
             // Criar novo contrato
-            await tx.contratos_motoristas.create({
+            await tx.contratos.create({
               data: {
                 motoristaId: id,
                 numeroContrato: dados.numeroContrato || `CONTRATO-${Date.now()}`,
@@ -359,8 +359,8 @@ class MotoristaController {
       const motorista = await prisma.motorista.findUnique({
         where: { id },
         include: {
-          documentos_motoristas: true,
-          contratos_motoristas: { where: { ativo: true }, take: 1 }
+          documento: true,
+          contratos: { where: { ativo: true }, take: 1 }
         }
       });
 
@@ -371,12 +371,12 @@ class MotoristaController {
 
       // Verificações
       if (motorista.status !== 'ATIVO') problemas.push('Status não está ATIVO');
-      if (!motorista.documentos_motoristas?.numeroCNH) problemas.push('CNH não cadastrada');
-      if (motorista.documentos_motoristas?.validadeCNH && motorista.documentos_motoristas.validadeCNH < hoje) {
+      if (!motorista.documento?.numeroCNH) problemas.push('CNH não cadastrada');
+      if (motorista.documento?.validadeCNH && motorista.documento.validadeCNH < hoje) {
         problemas.push('CNH vencida');
       }
-      if (!motorista.documentos_motoristas?.statusBRK) problemas.push('BRK não aprovado');
-      if (!motorista.contratos_motoristas?.[0]?.cnpjMEI) problemas.push('CNPJ MEI não cadastrado');
+      if (!motorista.documento?.statusBRK) problemas.push('BRK não aprovado');
+      if (!motorista.contratos?.[0]?.cnpjMEI) problemas.push('CNPJ MEI não cadastrado');
       if (!motorista.tipoVeiculo) problemas.push('Tipo de veículo não cadastrado');
 
       const elegivel = problemas.length === 0;
