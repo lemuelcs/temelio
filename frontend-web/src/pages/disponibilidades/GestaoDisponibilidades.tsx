@@ -3,7 +3,7 @@
 
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Calendar, Search, User, Clock, CheckCircle, XCircle, RefreshCw, AlertTriangle } from 'lucide-react';
+import { Calendar, User, RefreshCw, AlertTriangle } from 'lucide-react';
 import api from '../../services/api';
 import { format, startOfWeek, addDays, isSameDay } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -34,7 +34,7 @@ export default function Disponibilidades() {
     queryKey: ['disponibilidades', format(weekStart, 'yyyy-MM-dd')],
     queryFn: async () => {
       try {
-        const response = await api.get('/disponibilidades', {
+        const response = await api.get('/gestao/disponibilidades', {
           params: {
             dataInicio: format(weekStart, 'yyyy-MM-dd'),
             dataFim: format(addDays(weekStart, 6), 'yyyy-MM-dd'),
@@ -49,13 +49,8 @@ export default function Disponibilidades() {
         return Array.isArray(dados) ? dados : [];
       } catch (error: any) {
         console.error('Erro ao buscar disponibilidades:', error);
-        
-        // Se for 404, endpoint não existe
-        if (error.response?.status === 404) {
-          throw new Error('Endpoint de disponibilidades não implementado no backend');
-        }
-        
-        return [];
+        const message = error.response?.data?.message || 'Não foi possível carregar as disponibilidades.';
+        throw new Error(message);
       }
     },
     retry: false,
@@ -110,9 +105,7 @@ export default function Disponibilidades() {
             <AlertTriangle className="w-6 h-6 text-red-600 mt-0.5 mr-3 flex-shrink-0" />
             <div className="flex-1">
               <p className="font-semibold text-red-800 text-lg mb-2">Erro ao carregar disponibilidades</p>
-              <p className="text-red-700 mb-4">
-                {(error as any)?.message || 'Erro desconhecido'}
-              </p>
+              <p className="text-red-700 mb-4">{(error as Error).message}</p>
               <button
                 onClick={() => refetch()}
                 className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors flex items-center gap-2"
@@ -122,41 +115,6 @@ export default function Disponibilidades() {
               </button>
             </div>
           </div>
-        </div>
-
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-          <p className="text-sm text-blue-800 font-semibold mb-2">
-            ⚠️ Este endpoint precisa ser implementado no backend
-          </p>
-          <p className="text-sm text-blue-700">
-            <strong>Endpoint necessário:</strong> <code>GET /api/disponibilidades</code>
-          </p>
-          <p className="text-sm text-blue-700 mt-2">
-            <strong>Parâmetros esperados:</strong> dataInicio, dataFim
-          </p>
-          <p className="text-sm text-blue-700 mt-2">
-            <strong>Resposta esperada:</strong>
-          </p>
-          <pre className="text-xs bg-blue-100 p-2 rounded mt-2 overflow-x-auto">
-{`{
-  "success": true,
-  "data": {
-    "disponibilidades": [
-      {
-        "id": "...",
-        "motoristaId": "...",
-        "data": "2025-10-22",
-        "turno": "MANHA",
-        "disponivel": true,
-        "motorista": {
-          "nome": "João Silva",
-          "tipoVeiculo": "CARGO_VAN"
-        }
-      }
-    ]
-  }
-}`}
-          </pre>
         </div>
       </div>
     );

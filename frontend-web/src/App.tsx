@@ -173,7 +173,7 @@ function AppRoutes() {
         
         {/* Resumo de Disponibilidade */}
         <Route
-          path="/disponibilidade/resumo"
+          path="/disponibilidades/resumo"
           element={
             <PrivateRoute allowedProfiles={['ADMINISTRADOR', 'DESPACHANTE_PLANEJADOR']}>
               <Layout>
@@ -182,6 +182,7 @@ function AppRoutes() {
             </PrivateRoute>
           }
         />
+        <Route path="/disponibilidade/resumo" element={<Navigate to="/disponibilidades/resumo" replace />} />
         
         <Route
           path="/alertas"

@@ -36,7 +36,7 @@ const rotasSubmenu = [
 // ⭐ NOVO: Estrutura de submenu para Disponibilidades
 const disponibilidadesSubmenu = [
   { path: '/disponibilidades', icon: Calendar, label: 'Gerenciar' },
-  { path: '/disponibilidade/resumo', icon: ClipboardList, label: 'Resumo Consolidado' },
+  { path: '/disponibilidades/resumo', icon: ClipboardList, label: 'Resumo Consolidado' },
 ];
 
 // Estrutura de submenu para Ajustes
@@ -86,7 +86,7 @@ export default function Layout({ children }: LayoutProps) {
 
   // Verificar se alguma rota está ativa
   const isRotasActive = location.pathname.startsWith('/rotas');
-  const isDisponibilidadesActive = location.pathname.startsWith('/disponibilidade'); // ⭐ NOVO
+  const isDisponibilidadesActive = location.pathname.startsWith('/disponibilidades');
   const isAjustesActive = location.pathname.startsWith('/ajustes');
 
   return (
