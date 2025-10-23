@@ -8,6 +8,7 @@ interface Motorista {
   transporterId?: string;
   nomeCompleto: string;
   cpf: string;
+  dataNascimento?: string;
   email: string;
   celular: string;
   chavePix?: string;
@@ -125,7 +126,14 @@ export default function Motoristas() {
       try {
         const response = await api.get('/gestao/motoristas');
         const dados = response.data?.data?.motoristas || response.data?.motoristas || response.data;
-        return Array.isArray(dados) ? dados : [];
+        const motoristasArray = Array.isArray(dados) ? dados : [];
+
+        // Ordenar por updatedAt DESC
+        return motoristasArray.sort((a: any, b: any) => {
+          const dateA = new Date(a.updatedAt || a.createdAt || 0);
+          const dateB = new Date(b.updatedAt || b.createdAt || 0);
+          return dateB.getTime() - dateA.getTime();
+        });
       } catch (error) {
         console.error('Erro ao buscar motoristas:', error);
         return [];
@@ -138,7 +146,8 @@ export default function Motoristas() {
     const matchesSearch = (m.nomeCompleto || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
                          (m.cpf || '').includes(searchTerm) ||
                          (m.email || '').toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesStatus = !filterStatus || m.status === filterStatus;
+    // Se não houver filtro de status, mostrar apenas ATIVO e ONBOARDING
+    const matchesStatus = filterStatus ? m.status === filterStatus : (m.status === 'ATIVO' || m.status === 'ONBOARDING');
     const matchesTipo = !filterTipo || m.tipoVeiculo === filterTipo;
     return matchesSearch && matchesStatus && matchesTipo;
   });
@@ -208,6 +217,7 @@ export default function Motoristas() {
             <option value="ATIVO">Ativos</option>
             <option value="INATIVO">Inativos</option>
             <option value="SUSPENSO">Suspensos</option>
+            <option value="EXCLUIDO">Excluídos</option>
           </select>
 
           <select
@@ -467,6 +477,7 @@ function MotoristaModal({ motoristaId, onClose }: { motoristaId: string | null; 
     transporterId: '',
     nomeCompleto: '',
     cpf: '',
+    dataNascimento: '',
     email: '',
     celular: '',
     chavePix: '',
@@ -512,11 +523,12 @@ function MotoristaModal({ motoristaId, onClose }: { motoristaId: string | null; 
     if (motoristaData && isEditing) {
       const doc = motoristaData.documentos?.[0] || {};
       const contrato = motoristaData.contratos?.[0] || {};
-      
+
       setFormData({
         transporterId: motoristaData.transporterId || '',
         nomeCompleto: motoristaData.nomeCompleto || '',
         cpf: motoristaData.cpf || '',
+        dataNascimento: motoristaData.dataNascimento ? motoristaData.dataNascimento.split('T')[0] : '',
         email: motoristaData.email || '',
         celular: motoristaData.celular || '',
         chavePix: motoristaData.chavePix || '',
@@ -600,6 +612,7 @@ function MotoristaModal({ motoristaId, onClose }: { motoristaId: string | null; 
         transporterId: data.transporterId || null,
         nomeCompleto: data.nomeCompleto,
         cpf: data.cpf.replace(/\D/g, ''),
+        dataNascimento: data.dataNascimento || null,
         email: data.email,
         celular: data.celular.replace(/\D/g, ''),
         chavePix: data.chavePix || null,
@@ -696,6 +709,15 @@ function MotoristaModal({ motoristaId, onClose }: { motoristaId: string | null; 
                   onChange={(e) => setFormData({ ...formData, cpf: e.target.value })}
                   placeholder="000.000.000-00"
                   maxLength={14}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Data de Nascimento</label>
+                <input
+                  type="date"
+                  value={formData.dataNascimento}
+                  onChange={(e) => setFormData({ ...formData, dataNascimento: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>

@@ -3,16 +3,23 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, Search, Edit, Trash2, MapPin, Clock, DollarSign, Calendar } from 'lucide-react';
 import api from '../../services/api';
 
-// Constante de Tabela de Preços
-const TABELA_PRECOS = {
-  MOTOCICLETA: 20.00,
-  CARRO_PASSEIO: 25.00,
-  CARGO_VAN: 30.00,
-  LARGE_VAN: 35.00,
+// Valores padrão (fallback se não conseguir buscar do BD)
+const VALORES_PADRAO = {
+  MOTOCICLETA: 27.00,
+  CARRO_PASSEIO: 37.00,
+  CARGO_VAN: 40.00,
+  LARGE_VAN: 52.50,
+  TRANSPORTADORA: 25.00,
+  KM: 0.64,
 };
 
-const VALOR_VEICULO_TRANSPORTADORA = 22.00;
-const VALOR_POR_KM = 0.64;
+// Mapeamento entre tipos de veículo do frontend e tipos de serviço da API
+const TIPO_VEICULO_TO_SERVICO: Record<string, string> = {
+  MOTOCICLETA: 'BIKE',
+  CARRO_PASSEIO: 'PASSENGER',
+  CARGO_VAN: 'SMALL_VAN',
+  LARGE_VAN: 'LARGE_VAN',
+};
 
 interface Rota {
   id: string;
@@ -46,7 +53,7 @@ export default function Rotas() {
   const [filterCiclo, setFilterCiclo] = useState<string>('');
   const [filterDataInicio, setFilterDataInicio] = useState<string>('');
   const [filterDataFim, setFilterDataFim] = useState<string>('');
-  
+
   const queryClient = useQueryClient();
 
   // Definir filtro de data padrão (hoje e amanhã)
@@ -58,6 +65,45 @@ export default function Rotas() {
     setFilterDataInicio(hoje.toISOString().split('T')[0]);
     setFilterDataFim(amanha.toISOString().split('T')[0]);
   }, []);
+
+  // Buscar tabela de preços da estação DBS5
+  const { data: tabelaPrecos = null } = useQuery({
+    queryKey: ['tabela-precos-dbs5'],
+    queryFn: async () => {
+      try {
+        // Buscar todas as tabelas de preços ativas da estação DBS5
+        const response = await api.get('/tabela-precos', {
+          params: {
+            estacao: 'DBS5',
+            ativo: 'true'
+          }
+        });
+
+        const tabelas = response.data?.data?.tabelas || response.data?.tabelas || [];
+
+        // Criar mapa de preços por tipoServico e propriedade
+        const precosMap: Record<string, Record<string, number>> = {};
+
+        tabelas.forEach((tabela: any) => {
+          if (tabela.tipoServico && tabela.propriedade) {
+            if (!precosMap[tabela.tipoServico]) {
+              precosMap[tabela.tipoServico] = {};
+            }
+            precosMap[tabela.tipoServico][tabela.propriedade] = parseFloat(tabela.valorHora);
+          }
+        });
+
+        return {
+          precos: precosMap,
+          valorKm: tabelas[0]?.valorKm ? parseFloat(tabelas[0].valorKm) : VALORES_PADRAO.KM
+        };
+      } catch (error) {
+        console.error('Erro ao buscar tabela de preços:', error);
+        return null;
+      }
+    },
+    staleTime: 5 * 60 * 1000, // Cache por 5 minutos
+  });
 
   // Buscar rotas com filtros
   const { data: rotas = [], isLoading } = useQuery({
@@ -390,6 +436,7 @@ export default function Rotas() {
       {showModal && (
         <RotaModal
           rotaId={editingId}
+          tabelaPrecos={tabelaPrecos}
           onClose={() => {
             setShowModal(false);
             setEditingId(null);
@@ -401,9 +448,27 @@ export default function Rotas() {
 }
 
 // Modal de Criação/Edição
-function RotaModal({ rotaId, onClose }: { rotaId: string | null; onClose: () => void }) {
+function RotaModal({ rotaId, tabelaPrecos, onClose }: { rotaId: string | null; tabelaPrecos: any; onClose: () => void }) {
   const queryClient = useQueryClient();
   const isEditing = !!rotaId;
+
+  // Função para obter valor da tabela de preços
+  const getValorHora = (tipoVeiculo: string, veiculoTransportadora: boolean): number => {
+    if (!tabelaPrecos) {
+      // Fallback para valores padrão
+      if (veiculoTransportadora) return VALORES_PADRAO.TRANSPORTADORA;
+      return VALORES_PADRAO[tipoVeiculo as keyof typeof VALORES_PADRAO] || 0;
+    }
+
+    const tipoServico = TIPO_VEICULO_TO_SERVICO[tipoVeiculo];
+    const propriedade = veiculoTransportadora ? 'TRANSPORTADORA' : 'PROPRIO';
+
+    return tabelaPrecos.precos?.[tipoServico]?.[propriedade] || VALORES_PADRAO[tipoVeiculo as keyof typeof VALORES_PADRAO] || 0;
+  };
+
+  const getValorKm = (): number => {
+    return tabelaPrecos?.valorKm || VALORES_PADRAO.KM;
+  };
 
   const [formData, setFormData] = useState({
     dataRota: new Date().toISOString().split('T')[0],
@@ -441,14 +506,13 @@ function RotaModal({ rotaId, onClose }: { rotaId: string | null; onClose: () => 
 
   // Calcular valores automaticamente
   useEffect(() => {
-    const valorHora = formData.veiculoTransportadora 
-      ? VALOR_VEICULO_TRANSPORTADORA 
-      : TABELA_PRECOS[formData.tipoVeiculo as keyof typeof TABELA_PRECOS];
-    
+    const valorHora = getValorHora(formData.tipoVeiculo, formData.veiculoTransportadora);
+    const valorKm = getValorKm();
+
     const valorBase = valorHora * formData.tamanhoHoras;
     const totalBonusPorHora = formData.bonusPorHora * formData.tamanhoHoras;
     const valorProjetado = valorBase + totalBonusPorHora + formData.bonusFixo;
-    const bonusKmProjetado = formData.kmProjetado * VALOR_POR_KM;
+    const bonusKmProjetado = formData.kmProjetado * valorKm;
     const valorTotalProjetado = valorProjetado + bonusKmProjetado;
 
     setValorCalculado({
@@ -466,6 +530,7 @@ function RotaModal({ rotaId, onClose }: { rotaId: string | null; onClose: () => 
     formData.bonusPorHora,
     formData.bonusFixo,
     formData.kmProjetado,
+    tabelaPrecos,
   ]);
 
   // Ajustar ciclo quando mudar tipo de rota
@@ -525,7 +590,7 @@ function RotaModal({ rotaId, onClose }: { rotaId: string | null; onClose: () => 
         bonusFixo: data.bonusFixo,
         valorProjetado: valorCalculado.valorProjetado,
         kmProjetado: data.kmProjetado,
-        valorKm: VALOR_POR_KM,
+        valorKm: getValorKm(),
         valorTotalRota: valorCalculado.valorTotalProjetado,
         localId: data.localId,
         status: 'DISPONIVEL', // Status inicial sempre DISPONIVEL
@@ -694,10 +759,10 @@ function RotaModal({ rotaId, onClose }: { rotaId: string | null; onClose: () => 
                   onChange={(e) => setFormData({ ...formData, tipoVeiculo: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 >
-                  <option value="MOTOCICLETA">Motocicleta - {formatCurrency(TABELA_PRECOS.MOTOCICLETA)}/h</option>
-                  <option value="CARRO_PASSEIO">Carro - {formatCurrency(TABELA_PRECOS.CARRO_PASSEIO)}/h</option>
-                  <option value="CARGO_VAN">Cargo Van - {formatCurrency(TABELA_PRECOS.CARGO_VAN)}/h</option>
-                  <option value="LARGE_VAN">Large Van - {formatCurrency(TABELA_PRECOS.LARGE_VAN)}/h</option>
+                  <option value="MOTOCICLETA">Motocicleta - {formatCurrency(getValorHora('MOTOCICLETA', false))}/h</option>
+                  <option value="CARRO_PASSEIO">Carro - {formatCurrency(getValorHora('CARRO_PASSEIO', false))}/h</option>
+                  <option value="CARGO_VAN">Cargo Van - {formatCurrency(getValorHora('CARGO_VAN', false))}/h</option>
+                  <option value="LARGE_VAN">Large Van - {formatCurrency(getValorHora('LARGE_VAN', false))}/h</option>
                 </select>
               </div>
               <div>
@@ -724,7 +789,7 @@ function RotaModal({ rotaId, onClose }: { rotaId: string | null; onClose: () => 
                     className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
                   />
                   <span className="text-sm font-medium text-gray-700">
-                    Veículo da Transportadora ({formatCurrency(VALOR_VEICULO_TRANSPORTADORA)}/h)
+                    Veículo da Transportadora ({formatCurrency(getValorHora(formData.tipoVeiculo, true))}/h)
                   </span>
                 </label>
                 <p className="text-xs text-gray-500 mt-1 ml-6">
