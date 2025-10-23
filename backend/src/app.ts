@@ -14,6 +14,7 @@ import kpiRoutes from './routes/kpi.routes';
 import tabelaPrecosRoutes from './routes/tabelaPrecos.routes';
 import dashboardRoutes from './routes/dashboard.routes';
 import gestaoMotoristasRoutes from './routes/gestao.motoristas.routes';
+import motoristaRoutes from './routes/motorista.routes';
 
 
 // Importar middlewares
@@ -75,6 +76,7 @@ app.use('/api/alertas', alertaRoutes);
 app.use('/api/kpis', kpiRoutes);
 app.use('/api/tabela-precos', tabelaPrecosRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/motoristas', motoristaRoutes);
 app.use('/api/gestao/motoristas', gestaoMotoristasRoutes);
 
 // ========================================

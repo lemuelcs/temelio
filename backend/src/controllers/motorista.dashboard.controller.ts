@@ -237,7 +237,7 @@ export async function getDashboardMotorista(req: Request, res: Response) {
       rotasPendentes: {
         quantidade: rotasPendentes.length,
         proximaData: proximaRota ? format(new Date(proximaRota.dataRota), 'dd/MM/yyyy') : null,
-        ciclo: proximaRota?.cicloRota || null
+        turno: proximaRota?.cicloRota || null
       },
       performance: {
         taxaConclusao,
