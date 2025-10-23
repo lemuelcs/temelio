@@ -1,0 +1,585 @@
+import { useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Plus, Search, Edit, Trash2, MapPin, Building2, Loader } from 'lucide-react';
+import { IMaskInput } from 'react-imask';
+import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
+import L from 'leaflet';
+import api from '../../services/api';
+
+// Fix para os ícones do Leaflet
+import icon from 'leaflet/dist/images/marker-icon.png';
+import iconShadow from 'leaflet/dist/images/marker-shadow.png';
+
+let DefaultIcon = L.icon({
+  iconUrl: icon,
+  shadowUrl: iconShadow,
+  iconSize: [25, 41],
+  iconAnchor: [12, 41]
+});
+
+L.Marker.prototype.options.icon = DefaultIcon;
+
+interface Local {
+  id: string;
+  nome: string;
+  tipo: 'ESTACAO' | 'CLIENTE' | 'CENTRO_DISTRIBUICAO';
+  endereco: string;
+  bairro?: string;
+  cidade: string;
+  estado: string;
+  cep: string;
+  latitude?: number;
+  longitude?: number;
+  ativo: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export default function Locais() {
+  const [showModal, setShowModal] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterTipo, setFilterTipo] = useState<string>('');
+
+  const queryClient = useQueryClient();
+
+  // Buscar locais
+  const { data: locais = [], isLoading } = useQuery({
+    queryKey: ['locais'],
+    queryFn: async () => {
+      try {
+        const response = await api.get('/locais');
+        const dados = response.data?.data?.locais || response.data?.locais || response.data;
+        return Array.isArray(dados) ? dados : [];
+      } catch (error) {
+        console.error('Erro ao buscar locais:', error);
+        return [];
+      }
+    },
+  });
+
+  // Deletar local
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await api.delete(`/locais/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['locais'] });
+    },
+    onError: (error: any) => {
+      alert(`Erro ao excluir: ${error.response?.data?.message || error.message}`);
+    }
+  });
+
+  // Filtrar locais
+  const filteredLocais = locais.filter((l: Local) => {
+    const matchesSearch = (l.nome || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         (l.cidade || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         (l.endereco || '').toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesTipo = !filterTipo || l.tipo === filterTipo;
+    return matchesSearch && matchesTipo;
+  });
+
+  const handleEdit = (id: string) => {
+    setEditingId(id);
+    setShowModal(true);
+  };
+
+  const handleDelete = async (id: string) => {
+    if (window.confirm('Tem certeza que deseja excluir este local?')) {
+      deleteMutation.mutate(id);
+    }
+  };
+
+  const getTipoLabel = (tipo: string) => {
+    const labels = {
+      ESTACAO: 'Estação',
+      CLIENTE: 'Cliente',
+      CENTRO_DISTRIBUICAO: 'Centro de Distribuição',
+    };
+    return labels[tipo as keyof typeof labels] || tipo;
+  };
+
+  const getTipoBadge = (tipo: string) => {
+    const styles = {
+      ESTACAO: 'bg-blue-100 text-blue-800',
+      CLIENTE: 'bg-green-100 text-green-800',
+      CENTRO_DISTRIBUICAO: 'bg-purple-100 text-purple-800',
+    };
+    return styles[tipo as keyof typeof styles] || styles.ESTACAO;
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex justify-between items-center">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Locais</h1>
+          <p className="text-gray-600 mt-1">Gerencie estações e pontos de entrega</p>
+        </div>
+        <button
+          onClick={() => {
+            setEditingId(null);
+            setShowModal(true);
+          }}
+          className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition"
+        >
+          <Plus className="w-5 h-5" />
+          Novo Local
+        </button>
+      </div>
+
+      {/* Filtros */}
+      <div className="bg-white rounded-lg shadow p-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+            <input
+              type="text"
+              placeholder="Buscar por nome, cidade ou endereço..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
+
+          <select
+            value={filterTipo}
+            onChange={(e) => setFilterTipo(e.target.value)}
+            className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          >
+            <option value="">Todos os tipos</option>
+            <option value="ESTACAO">Estação</option>
+            <option value="CLIENTE">Cliente</option>
+            <option value="CENTRO_DISTRIBUICAO">Centro de Distribuição</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Grade de Cards */}
+      {isLoading ? (
+        <div className="bg-white rounded-lg shadow p-8 text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Carregando locais...</p>
+        </div>
+      ) : filteredLocais.length === 0 ? (
+        <div className="bg-white rounded-lg shadow p-8 text-center">
+          <MapPin className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+          <p className="text-gray-600">Nenhum local encontrado</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {filteredLocais.map((local: Local) => (
+            <div key={local.id} className="bg-white rounded-lg shadow hover:shadow-lg transition">
+              <div className="p-6">
+                {/* Cabeçalho */}
+                <div className="flex items-start justify-between mb-4">
+                  <div className="flex items-start gap-3">
+                    <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                      <Building2 className="w-5 h-5 text-blue-600" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-semibold text-gray-900 truncate">{local.nome}</h3>
+                      <span className={`inline-block mt-1 px-2 py-1 text-xs font-semibold rounded-full ${getTipoBadge(local.tipo)}`}>
+                        {getTipoLabel(local.tipo)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Informações */}
+                <div className="space-y-2 text-sm text-gray-600 mb-4">
+                  <div className="flex items-start gap-2">
+                    <MapPin className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p>{local.endereco}</p>
+                      {local.bairro && <p>{local.bairro}</p>}
+                      <p>{local.cidade} - {local.estado}</p>
+                      <p>CEP: {local.cep}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Coordenadas (se disponível) */}
+                {local.latitude && local.longitude && (
+                  <div className="text-xs text-gray-500 mb-4 p-2 bg-gray-50 rounded">
+                    <p>Lat: {typeof local.latitude === 'number' ? local.latitude.toFixed(6) : local.latitude}</p>
+                    <p>Long: {typeof local.longitude === 'number' ? local.longitude.toFixed(6) : local.longitude}</p>
+                  </div>
+                )}
+
+                {/* Ações */}
+                <div className="flex items-center gap-2 pt-4 border-t border-gray-200">
+                  <button
+                    onClick={() => handleEdit(local.id)}
+                    className="flex-1 flex items-center justify-center gap-2 px-3 py-2 text-blue-600 hover:bg-blue-50 rounded-lg transition"
+                  >
+                    <Edit className="w-4 h-4" />
+                    <span className="text-sm font-medium">Editar</span>
+                  </button>
+                  <button
+                    onClick={() => handleDelete(local.id)}
+                    className="flex-1 flex items-center justify-center gap-2 px-3 py-2 text-red-600 hover:bg-red-50 rounded-lg transition"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    <span className="text-sm font-medium">Excluir</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Modal */}
+      {showModal && (
+        <LocalModal
+          localId={editingId}
+          onClose={() => {
+            setShowModal(false);
+            setEditingId(null);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// Modal de Criação/Edição
+function LocalModal({ localId, onClose }: { localId: string | null; onClose: () => void }) {
+  const queryClient = useQueryClient();
+  const isEditing = !!localId;
+
+  const [formData, setFormData] = useState({
+    nome: '',
+    tipo: 'ESTACAO',
+    endereco: '',
+    bairro: '',
+    cidade: '',
+    estado: '',
+    cep: '',
+    latitude: null as number | null,
+    longitude: null as number | null,
+    ativo: true,
+  });
+
+  const [loadingCep, setLoadingCep] = useState(false);
+  const [mapCenter, setMapCenter] = useState<[number, number]>([-15.7942, -47.8825]); // Brasília
+
+  // Buscar dados se estiver editando
+  useQuery({
+    queryKey: ['local', localId],
+    queryFn: async () => {
+      if (!localId) return null;
+      const response = await api.get(`/locais/${localId}`);
+      const local = response.data?.data || response.data;
+      setFormData({
+        nome: local.nome || '',
+        tipo: local.tipo || 'ESTACAO',
+        endereco: local.endereco || '',
+        bairro: local.bairro || '',
+        cidade: local.cidade || '',
+        estado: local.estado || '',
+        cep: local.cep || '',
+        latitude: local.latitude || null,
+        longitude: local.longitude || null,
+        ativo: local.ativo !== undefined ? local.ativo : true,
+      });
+      
+      if (local.latitude && local.longitude) {
+        setMapCenter([local.latitude, local.longitude]);
+      }
+      
+      return local;
+    },
+    enabled: !!localId,
+  });
+
+  // Buscar CEP na API ViaCEP
+  const buscarCep = async (cep: string) => {
+    const cepLimpo = cep.replace(/\D/g, '');
+    if (cepLimpo.length !== 8) return;
+
+    setLoadingCep(true);
+    try {
+      const response = await fetch(`https://viacep.com.br/ws/${cepLimpo}/json/`);
+      const data = await response.json();
+
+      if (data.erro) {
+        alert('CEP não encontrado');
+        return;
+      }
+
+      setFormData(prev => ({
+        ...prev,
+        endereco: data.logradouro || prev.endereco,
+        bairro: data.bairro || prev.bairro,
+        cidade: data.localidade || prev.cidade,
+        estado: data.uf || prev.estado,
+      }));
+
+      // Tentar geocodificar o endereço para obter coordenadas
+      const enderecoCompleto = `${data.logradouro}, ${data.bairro}, ${data.localidade}, ${data.uf}, Brasil`;
+      geocodificarEndereco(enderecoCompleto);
+
+    } catch (error) {
+      console.error('Erro ao buscar CEP:', error);
+      alert('Erro ao buscar CEP');
+    } finally {
+      setLoadingCep(false);
+    }
+  };
+
+  // Geocodificar endereço usando Nominatim (OpenStreetMap)
+  const geocodificarEndereco = async (endereco: string) => {
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(endereco)}&limit=1`
+      );
+      const data = await response.json();
+
+      if (data.length > 0) {
+        const lat = parseFloat(data[0].lat);
+        const lon = parseFloat(data[0].lon);
+        setFormData(prev => ({
+          ...prev,
+          latitude: lat,
+          longitude: lon,
+        }));
+        setMapCenter([lat, lon]);
+      }
+    } catch (error) {
+      console.error('Erro ao geocodificar:', error);
+    }
+  };
+
+  const saveMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const payload = {
+        nome: data.nome,
+        tipo: data.tipo,
+        endereco: data.endereco,
+        bairro: data.bairro || null,
+        cidade: data.cidade,
+        estado: data.estado,
+        cep: data.cep.replace(/\D/g, ''),
+        latitude: data.latitude,
+        longitude: data.longitude,
+        ativo: data.ativo,
+      };
+      
+      if (isEditing) {
+        return api.put(`/locais/${localId}`, payload);
+      }
+      return api.post('/locais', payload);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['locais'] });
+      onClose();
+    },
+    onError: (error: any) => {
+      console.error('Erro ao salvar:', error);
+      alert(`Erro ao salvar: ${error.response?.data?.message || error.message}`);
+    }
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    saveMutation.mutate(formData);
+  };
+
+  // Componente para capturar clique no mapa
+  function LocationMarker() {
+    useMapEvents({
+      click(e) {
+        setFormData(prev => ({
+          ...prev,
+          latitude: e.latlng.lat,
+          longitude: e.latlng.lng,
+        }));
+      },
+    });
+
+    return formData.latitude && formData.longitude ? (
+      <Marker position={[formData.latitude, formData.longitude]} />
+    ) : null;
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
+      <div className="bg-white rounded-lg max-w-4xl w-full my-8">
+        <div className="p-6 border-b border-gray-200">
+          <h2 className="text-xl font-semibold text-gray-900">
+            {isEditing ? 'Editar Local' : 'Novo Local'}
+          </h2>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-6 space-y-6 max-h-[calc(100vh-200px)] overflow-y-auto">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Nome do Local *
+              </label>
+              <input
+                type="text"
+                required
+                value={formData.nome}
+                onChange={(e) => setFormData({ ...formData, nome: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Tipo *
+              </label>
+              <select
+                value={formData.tipo}
+                onChange={(e) => setFormData({ ...formData, tipo: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="ESTACAO">Estação</option>
+                <option value="CLIENTE">Cliente</option>
+                <option value="CENTRO_DISTRIBUICAO">Centro de Distribuição</option>
+              </select>
+            </div>
+
+            <div className="relative">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                CEP *
+              </label>
+              <div className="relative">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  CEP *
+                </label>
+                <IMaskInput
+                  mask="00000-000"
+                  value={formData.cep || ''}
+                  onAccept={(value) => setFormData({ ...formData, cep: value })}
+                  onBlur={(e) => buscarCep(e.target.value)}
+                  placeholder="00000-000"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  required
+                />
+                {loadingCep && (
+                  <Loader className="absolute right-3 top-9 w-4 h-4 animate-spin text-blue-600" />
+                )}  
+              </div>
+              {loadingCep && (
+                <Loader className="absolute right-3 top-9 w-4 h-4 animate-spin text-blue-600" />
+              )}
+            </div>
+
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Endereço *
+              </label>
+              <input
+                type="text"
+                required
+                value={formData.endereco}
+                onChange={(e) => setFormData({ ...formData, endereco: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Bairro
+              </label>
+              <input
+                type="text"
+                maxLength={30}
+                value={formData.bairro}
+                onChange={(e) => setFormData({ ...formData, bairro: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Cidade *
+              </label>
+              <input
+                type="text"
+                required
+                value={formData.cidade}
+                onChange={(e) => setFormData({ ...formData, cidade: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Estado *
+              </label>
+              <input
+                type="text"
+                required
+                maxLength={2}
+                value={formData.estado}
+                onChange={(e) => setFormData({ ...formData, estado: e.target.value.toUpperCase() })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="UF"
+              />
+            </div>
+
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Localização no Mapa (clique para marcar)
+              </label>
+              <div className="h-64 rounded-lg overflow-hidden border border-gray-300">
+                <MapContainer
+                  center={mapCenter}
+                  zoom={13}
+                  style={{ height: '100%', width: '100%' }}
+                >
+                  <TileLayer
+                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                  />
+                  <LocationMarker />
+                </MapContainer>
+              </div>
+              {formData.latitude && formData.longitude && (
+                <p className="text-xs text-gray-500 mt-2">
+                  Coordenadas: {formData.latitude.toFixed(6)}, {formData.longitude.toFixed(6)}
+                </p>
+              )}
+            </div>
+
+            <div className="md:col-span-2">
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={formData.ativo}
+                  onChange={(e) => setFormData({ ...formData, ativo: e.target.checked })}
+                  className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                />
+                <span className="text-sm font-medium text-gray-700">Local Ativo</span>
+              </label>
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={saveMutation.isPending}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50"
+            >
+              {saveMutation.isPending ? 'Salvando...' : (isEditing ? 'Salvar Alterações' : 'Criar Local')}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}

@@ -1,0 +1,222 @@
+// frontend/src/hooks/useDisponibilidade.ts
+// ATUALIZADO: Endpoints ajustados para /api/motorista/disponibilidades
+
+import { useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import api from '../services/api';
+import type { 
+  Disponibilidade, 
+  SemanasResponse, 
+  HistoricoDisponibilidade
+} from '../types/disponibilidade';
+import { CicloRota } from '../types/disponibilidade';
+
+// Definir interface localmente
+interface DisponibilidadeInput {
+  data: string;
+  ciclo: CicloRota;
+  disponivel: boolean;
+}
+
+/**
+ * Converte Date para string ISO (YYYY-MM-DD)
+ */
+function formatarDataISO(data: Date | string): string {
+  if (typeof data === 'string') {
+    // Se já é string, extrair apenas YYYY-MM-DD
+    return data.split('T')[0];
+  }
+  const ano = data.getFullYear();
+  const mes = String(data.getMonth() + 1).padStart(2, '0');
+  const dia = String(data.getDate()).padStart(2, '0');
+  return `${ano}-${mes}-${dia}`;
+}
+
+export function useDisponibilidade() {
+  const queryClient = useQueryClient();
+
+  /**
+   * Buscar semanas (corrente + próxima)
+   */
+  const { data: semanas, isLoading: isLoadingSemanas } = useQuery<SemanasResponse>({
+    queryKey: ['disponibilidade-semanas'],
+    queryFn: async () => {
+      console.log('🔄 Buscando semanas da API...');
+      const response = await api.get('/motorista/disponibilidades/semanas');
+      console.log('📥 Resposta da API:', response.data);
+      return response.data.data;
+    }
+  });
+
+  /**
+   * Buscar histórico
+   */
+  const { data: historico, isLoading: isLoadingHistorico } = useQuery<HistoricoDisponibilidade[]>({
+    queryKey: ['disponibilidade-historico'],
+    queryFn: async () => {
+      const response = await api.get('/motorista/disponibilidades/historico');
+      return response.data.data.historico;
+    },
+    enabled: false
+  });
+
+  /**
+   * Salvar disponibilidades em lote
+   */
+  const salvarMutation = useMutation({
+    mutationFn: async (disponibilidades: DisponibilidadeInput[]) => {
+      console.log('📤 Enviando para API:', disponibilidades); // DEBUG
+      const response = await api.post('/motorista/disponibilidades/batch', {
+        disponibilidades
+      });
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['disponibilidade-semanas'] });
+    }
+  });
+
+  return {
+    semanas,
+    historico,
+    isLoadingSemanas,
+    isLoadingHistorico,
+    salvar: salvarMutation.mutateAsync,
+    isSaving: salvarMutation.isPending
+  };
+}
+
+/**
+ * Hook para gerenciar estado local do calendário
+ */
+export function useCalendarioDisponibilidade() {
+  const [disponibilidades, setDisponibilidades] = useState<Map<string, boolean>>(new Map());
+  const [alteracoes, setAlteracoes] = useState<Set<string>>(new Set());
+
+  /**
+   * Gera chave única para data + ciclo
+   */
+  const gerarChave = (data: string | Date, ciclo: CicloRota): string => {
+    const dataStr = formatarDataISO(data);
+    const chave = `${dataStr}|${ciclo}`;
+    console.log('🔑 Chave gerada:', chave); // DEBUG
+    return chave;
+  };
+
+  /**
+   * Carregar disponibilidades existentes
+   */
+  const carregarDisponibilidades = (disps: Disponibilidade[]) => {
+    const novoMap = new Map<string, boolean>();
+    disps.forEach(disp => {
+      const chave = gerarChave(disp.data, disp.ciclo);
+      novoMap.set(chave, disp.disponivel);
+    });
+    console.log('📥 Disponibilidades carregadas:', novoMap.size, 'itens'); // DEBUG
+    setDisponibilidades(novoMap);
+    setAlteracoes(new Set());
+  };
+
+  /**
+   * Toggle disponibilidade de um ciclo
+   */
+  const toggleDisponibilidade = (data: string | Date, ciclo: CicloRota) => {
+    const chave = gerarChave(data, ciclo);
+    const valorAtual = disponibilidades.get(chave) || false;
+    const novoValor = !valorAtual;
+
+    console.log('🔄 Toggle:', { chave, de: valorAtual, para: novoValor }); // DEBUG
+
+    setDisponibilidades(prev => {
+      const novoMap = new Map(prev);
+      novoMap.set(chave, novoValor);
+      return novoMap;
+    });
+
+    setAlteracoes(prev => {
+      const novoSet = new Set(prev);
+      novoSet.add(chave);
+      return novoSet;
+    });
+  };
+
+  /**
+   * Verificar se um ciclo está disponível
+   */
+  const isDisponivel = (data: string | Date, ciclo: CicloRota): boolean => {
+    const chave = gerarChave(data, ciclo);
+    return disponibilidades.get(chave) || false;
+  };
+
+  /**
+   * Verificar se tem alterações não salvas
+   */
+  const temAlteracoes = (): boolean => {
+    return alteracoes.size > 0;
+  };
+
+  /**
+   * Obter total de ciclos selecionados
+   */
+  const getTotalSelecionado = (): number => {
+    return Array.from(disponibilidades.values()).filter(v => v).length;
+  };
+
+  /**
+   * Converter para formato de envio
+   */
+  const converterParaEnvio = (): DisponibilidadeInput[] => {
+    const resultado: DisponibilidadeInput[] = [];
+    const ciclosValidos: CicloRota[] = ['CICLO_1', 'CICLO_2', 'SAME_DAY'];
+    
+    console.log('📊 Convertendo disponibilidades:', disponibilidades.size, 'itens');
+    
+    disponibilidades.forEach((disponivel, chave) => {
+      console.log('  🔍 Processando chave:', chave);
+      
+      const partes = chave.split('|');
+      if (partes.length !== 2) {
+        console.error('  ❌ Chave inválida:', chave, '- esperado formato: data|ciclo');
+        return;
+      }
+      
+      const [data, ciclo] = partes;
+      
+      // Validar se ciclo é válido
+      if (!ciclosValidos.includes(ciclo as CicloRota)) {
+        console.error('  ❌ Ciclo inválido:', ciclo, '- deve ser CICLO_1, CICLO_2 ou SAME_DAY');
+        return;
+      }
+      
+      console.log('  ✅ Extraído:', { data, ciclo, disponivel });
+      
+      resultado.push({
+        data,
+        ciclo: ciclo as CicloRota,
+        disponivel
+      });
+    });
+
+    console.log('📤 Resultado final:', resultado);
+    return resultado;
+  };
+
+  /**
+   * Limpar alterações
+   */
+  const limparAlteracoes = () => {
+    setAlteracoes(new Set());
+  };
+
+  return {
+    disponibilidades,
+    alteracoes,
+    carregarDisponibilidades,
+    toggleDisponibilidade,
+    isDisponivel,
+    temAlteracoes,
+    getTotalSelecionado,
+    converterParaEnvio,
+    limparAlteracoes
+  };
+}

@@ -1,0 +1,397 @@
+import { Request, Response, NextFunction } from 'express';
+import motoristaService from '../services/motorista.service';
+import { AppError } from '../middlewares/error.middleware';
+import { StatusMotorista, TipoVeiculo, TipoPropriedadeVeiculo } from '@prisma/client';
+
+class MotoristaController {
+  // POST /api/motoristas
+  async criar(req: Request, res: Response, next: NextFunction) {
+    try {
+      if (!req.user) {
+        throw new AppError('Usuário não autenticado', 401);
+      }
+
+      const {
+        nomeCompleto,
+        celular,
+        cidade,
+        uf,
+        bairro,
+        cep,
+        logradouro,
+        numero,
+        complemento,
+        cpf,
+        email,
+        chavePix,
+        tipoVeiculo,
+        propriedadeVeiculo,
+        anoFabricacaoVeiculo,
+        placaVeiculo,
+        numeroCNH,
+        validadeCNH,
+        anoLicenciamento,
+        dataVerificacaoBRK,
+        proximaVerificacaoBRK,
+        statusBRK,
+        status,
+        numeroContrato,
+        dataAssinatura,
+        dataVigenciaInicial,
+        cnpjMEI,
+        razaoSocialMEI,
+      } = req.body;
+
+      // Validações básicas
+      if (!nomeCompleto || !celular || !cidade || !uf || !cpf || !email || !tipoVeiculo || !propriedadeVeiculo) {
+        throw new AppError('Todos os campos obrigatórios devem ser preenchidos', 400);
+      }
+
+      // Validar formato do celular (11 dígitos)
+      const celularLimpo = celular.replace(/\D/g, '');
+      if (celularLimpo.length !== 11) {
+        throw new AppError('Celular deve ter 11 dígitos (DDD + número)', 400);
+      }
+
+      // Validar CPF (11 dígitos)
+      const cpfLimpo = cpf.replace(/\D/g, '');
+      if (cpfLimpo.length !== 11) {
+        throw new AppError('CPF deve ter 11 dígitos', 400);
+      }
+
+      // Validar UF (2 caracteres)
+      if (uf.length !== 2) {
+        throw new AppError('UF deve ter 2 caracteres', 400);
+      }
+
+      // Validar CNH validade (hoje + 15 dias)
+      if (validadeCNH) {
+        const dataValidadeCNH = new Date(validadeCNH);
+        const dataMinima = new Date();
+        dataMinima.setDate(dataMinima.getDate() + 15);
+        
+        if (dataValidadeCNH < dataMinima) {
+          throw new AppError('A validade da CNH deve ser maior que hoje + 15 dias', 400);
+        }
+      }
+
+      // Gerar senha padrão
+      const senhaGerada = `${cpfLimpo.substring(0, 6)}`;
+
+      // Dados de auditoria
+      const auditData = {
+        usuarioId: req.user.id,
+        ip: req.ip || 'unknown',
+        dispositivo: (req.get('user-agent') || 'unknown').substring(0, 100)
+      };
+
+      const motorista = await motoristaService.criar({
+        nomeCompleto,
+        celular: celularLimpo,
+        cidade,
+        uf: uf.toUpperCase(),
+        bairro: bairro || null,
+        cep: cep ? cep.replace(/\D/g, '') : null,
+        logradouro: logradouro || null,
+        numero: numero || null,
+        complemento: complemento || null,
+        cpf: cpfLimpo,
+        email,
+        chavePix: chavePix || null,
+        tipoVeiculo: tipoVeiculo as TipoVeiculo,
+        propriedadeVeiculo: propriedadeVeiculo as TipoPropriedadeVeiculo,
+        senha: senhaGerada,
+        anoFabricacaoVeiculo: anoFabricacaoVeiculo || null,
+        placaVeiculo: placaVeiculo || null,
+        numeroCNH: numeroCNH || null,
+        validadeCNH: validadeCNH ? new Date(validadeCNH) : undefined,
+        anoLicenciamento: anoLicenciamento || null,
+        dataVerificacaoBRK: dataVerificacaoBRK ? new Date(dataVerificacaoBRK) : undefined,
+        proximaVerificacaoBRK: proximaVerificacaoBRK ? new Date(proximaVerificacaoBRK) : undefined,
+        statusBRK: statusBRK || false,
+        status: (status as StatusMotorista) || StatusMotorista.ONBOARDING,
+        numeroContrato: numeroContrato || undefined,
+        dataAssinatura: dataAssinatura ? new Date(dataAssinatura) : undefined,
+        dataVigenciaInicial: dataVigenciaInicial ? new Date(dataVigenciaInicial) : undefined,
+        cnpjMEI: cnpjMEI || undefined,
+        razaoSocialMEI: razaoSocialMEI || undefined,
+      }, auditData);
+
+      res.status(201).json({
+        status: 'success',
+        message: 'Motorista cadastrado com sucesso',
+        data: { motorista }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+  // PUT /api/motoristas/:id
+  async atualizar(req: Request, res: Response, next: NextFunction) {
+    try {
+      if (!req.user) {
+        throw new AppError('Usuário não autenticado', 401);
+      }
+
+      const { id } = req.params;
+      const {
+        nomeCompleto,
+        celular,
+        cidade,
+        uf,
+        bairro,
+        cep,
+        logradouro,
+        numero,
+        complemento,
+        email,
+        dataVerificacaoBRK,      // NOVO
+        proximaVerificacaoBRK,   // NOVO
+        statusBRK,               // NOVO
+        chavePix,
+        tipoVeiculo,
+        propriedadeVeiculo,
+        anoFabricacaoVeiculo,
+        placaVeiculo,
+        status,
+        transporterId,
+        numeroCNH,
+        validadeCNH,
+        anoLicenciamento,
+      } = req.body;
+
+      // Validar CNH validade se fornecida
+      if (validadeCNH) {
+        const dataValidadeCNH = new Date(validadeCNH);
+        const dataMinima = new Date();
+        dataMinima.setDate(dataMinima.getDate() + 15);
+        
+        if (dataValidadeCNH < dataMinima) {
+          throw new AppError('A validade da CNH deve ser maior que hoje + 15 dias', 400);
+        }
+      }
+
+      // Limpar celular e CEP se fornecidos
+      const celularLimpo = celular ? celular.replace(/\D/g, '') : undefined;
+      const cepLimpo = cep ? cep.replace(/\D/g, '') : undefined;
+
+      const auditData = {
+        usuarioId: req.user.id,
+        ip: req.ip || 'unknown',
+        dispositivo: (req.get('user-agent') || 'unknown').substring(0, 100)
+      };
+
+      // Preparar dados de atualização - APENAS campos fornecidos
+      const dadosAtualizacao: any = {};
+      
+      if (nomeCompleto !== undefined) dadosAtualizacao.nomeCompleto = nomeCompleto;
+      if (celularLimpo !== undefined) dadosAtualizacao.celular = celularLimpo;
+      if (cidade !== undefined) dadosAtualizacao.cidade = cidade;
+      if (uf !== undefined) dadosAtualizacao.uf = uf.toUpperCase();
+      if (bairro !== undefined) dadosAtualizacao.bairro = bairro;
+      if (cepLimpo !== undefined) dadosAtualizacao.cep = cepLimpo;
+      if (logradouro !== undefined) dadosAtualizacao.logradouro = logradouro;
+      if (numero !== undefined) dadosAtualizacao.numero = numero;
+      if (complemento !== undefined) dadosAtualizacao.complemento = complemento;
+      if (email !== undefined) dadosAtualizacao.email = email;
+      if (chavePix !== undefined) dadosAtualizacao.chavePix = chavePix;
+      if (tipoVeiculo !== undefined) dadosAtualizacao.tipoVeiculo = tipoVeiculo;
+      if (propriedadeVeiculo !== undefined) dadosAtualizacao.propriedadeVeiculo = propriedadeVeiculo;
+      if (anoFabricacaoVeiculo !== undefined) dadosAtualizacao.anoFabricacaoVeiculo = anoFabricacaoVeiculo;
+      if (placaVeiculo !== undefined) dadosAtualizacao.placaVeiculo = placaVeiculo;
+      if (status !== undefined) dadosAtualizacao.status = status;
+      if (transporterId !== undefined) dadosAtualizacao.transporterId = transporterId;
+
+      const motorista = await motoristaService.atualizar(id, dadosAtualizacao, auditData);
+
+      // Atualizar documentos se fornecidos
+      if (numeroCNH !== undefined || validadeCNH !== undefined || anoLicenciamento !== undefined ||
+        dataVerificacaoBRK !== undefined || proximaVerificacaoBRK !== undefined || statusBRK !== undefined) {
+          const dadosDocumento: any = {};
+        if (numeroCNH !== undefined) dadosDocumento.numeroCNH = numeroCNH;
+        if (validadeCNH !== undefined) dadosDocumento.validadeCNH = new Date(validadeCNH);
+        if (anoLicenciamento !== undefined) dadosDocumento.anoLicenciamento = anoLicenciamento;
+        if (dataVerificacaoBRK !== undefined) dadosDocumento.dataVerificacaoBRK = new Date(dataVerificacaoBRK);          // NOVO
+        if (proximaVerificacaoBRK !== undefined) dadosDocumento.proximaVerificacaoBRK = new Date(proximaVerificacaoBRK); // NOVO
+        if (statusBRK !== undefined) dadosDocumento.statusBRK = statusBRK; 
+        
+        await motoristaService.atualizarDocumentos(id, dadosDocumento, auditData);
+      }
+
+      res.json({
+        status: 'success',
+        message: 'Motorista atualizado com sucesso',
+        data: { motorista }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // GET /api/motoristas
+  async listar(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { nome, tipoVeiculo, status, cidade, uf } = req.query;
+
+      const filtros = {
+        nome: nome as string,
+        tipoVeiculo: tipoVeiculo as TipoVeiculo,
+        status: status as StatusMotorista,
+        cidade: cidade as string,
+        uf: uf as string
+      };
+
+      const motoristas = await motoristaService.listar(filtros);
+
+      res.json({
+        status: 'success',
+        data: {
+          motoristas,
+          total: motoristas.length
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // GET /api/motoristas/:id
+  async buscarPorId(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id } = req.params;
+
+      const motorista = await motoristaService.buscarPorId(id);
+
+      res.json({
+        status: 'success',
+        data: { motorista }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+
+  // PATCH /api/motoristas/:id/status
+  async mudarStatus(req: Request, res: Response, next: NextFunction) {
+    try {
+      if (!req.user) {
+        throw new AppError('Usuário não autenticado', 401);
+      }
+
+      const { id } = req.params;
+      const { status, motivo } = req.body;
+
+      if (!status) {
+        throw new AppError('Status é obrigatório', 400);
+      }
+
+      const auditData = {
+        usuarioId: req.user.id,
+        ip: req.ip || 'unknown',
+        dispositivo: (req.get('user-agent') || 'unknown').substring(0, 100)
+      };
+
+      const motorista = await motoristaService.mudarStatus(id, status as StatusMotorista, motivo || null, auditData);
+
+      res.json({
+        status: 'success',
+        message: 'Status alterado com sucesso',
+        data: { motorista }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+
+  async excluir(req: Request, res: Response, next: NextFunction) {
+    try {
+      if (!req.user) {
+        throw new AppError('Usuário não autenticado', 401);
+      }
+
+      const { id } = req.params;
+      const { motivo } = req.body;
+
+      if (!motivo) {
+        throw new AppError('Motivo é obrigatório para exclusão', 400);
+      }
+
+      const auditData = {
+        usuarioId: req.user.id,
+        ip: req.ip || 'unknown',
+        dispositivo: (req.get('user-agent') || 'unknown').substring(0, 100)
+      };
+
+      await motoristaService.excluir(id, motivo, auditData);
+
+      res.json({
+        status: 'success',
+        message: 'Motorista excluído com sucesso'
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // PATCH /api/motoristas/:id/documentos
+  async atualizarDocumentos(req: Request, res: Response, next: NextFunction) {
+    try {
+      if (!req.user) {
+        throw new AppError('Usuário não autenticado', 401);
+      }
+
+      const { id } = req.params;
+      const {
+        numeroCNH,
+        validadeCNH,
+        anoLicenciamento,
+        dataVerificacaoBRK,
+        proximaVerificacaoBRK,
+        statusBRK
+      } = req.body;
+
+      const auditData = {
+        usuarioId: req.user.id,
+        ip: req.ip || 'unknown',
+        dispositivo: (req.get('user-agent') || 'unknown').substring(0, 100)
+      };
+
+      const dadosDocumento: any = {};
+      if (numeroCNH !== undefined) dadosDocumento.numeroCNH = numeroCNH;
+      if (validadeCNH !== undefined) dadosDocumento.validadeCNH = new Date(validadeCNH);
+      if (anoLicenciamento !== undefined) dadosDocumento.anoLicenciamento = anoLicenciamento;
+      if (dataVerificacaoBRK !== undefined) dadosDocumento.dataVerificacaoBRK = new Date(dataVerificacaoBRK);
+      if (proximaVerificacaoBRK !== undefined) dadosDocumento.proximaVerificacaoBRK = new Date(proximaVerificacaoBRK);
+      if (statusBRK !== undefined) dadosDocumento.statusBRK = statusBRK;
+
+      const documento = await motoristaService.atualizarDocumentos(id, dadosDocumento, auditData);
+
+      res.json({
+        status: 'success',
+        message: 'Documentos atualizados com sucesso',
+        data: { documento }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // GET /api/motoristas/:id/elegibilidade
+  async verificarElegibilidade(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id } = req.params;
+      const resultado = await motoristaService.verificarElegibilidade(id);
+
+      res.json({
+        status: 'success',
+        data: resultado
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+}
+
+export default new MotoristaController();

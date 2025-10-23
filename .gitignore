@@ -1,0 +1,34 @@
+# Dependências
+node_modules/
+vendor/
+venv/
+__pycache__/
+
+# Arquivos de ambiente (IMPORTANTE!)
+.env
+.env.local
+.env.production
+*.key
+*.pem
+
+# Arquivos de IDE
+.vscode/
+.idea/
+*.swp
+
+# Logs
+*.log
+logs/
+
+# Banco de dados local
+*.sqlite
+*.db
+
+# Build
+dist/
+build/
+.next/
+
+# Sistema
+.DS_Store
+Thumbs.db

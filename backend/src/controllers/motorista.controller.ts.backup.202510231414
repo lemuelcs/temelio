@@ -1,0 +1,409 @@
+// backend/src/controllers/motorista.controller.ts
+// Controller completo para CRUD de motoristas (usado pela gestão)
+
+import { Request, Response, NextFunction } from 'express';
+import { PrismaClient } from '@prisma/client';
+import { AppError } from '../middlewares/error.middleware';
+
+const prisma = new PrismaClient();
+
+class MotoristaController {
+  /**
+   * Listar todos os motoristas com filtros
+   */
+  async listar(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { 
+        status, 
+        tipoVeiculo, 
+        cidade, 
+        uf,
+        nivel,
+        busca,
+        page = '1',
+        limit = '50'
+      } = req.query;
+
+      const skip = (Number(page) - 1) * Number(limit);
+      const take = Number(limit);
+
+      // Construir filtros
+      const where: any = {};
+
+      if (status) {
+        where.status = status;
+      }
+
+      if (tipoVeiculo) {
+        where.tipoVeiculo = tipoVeiculo;
+      }
+
+      if (cidade) {
+        where.cidade = cidade;
+      }
+
+      if (uf) {
+        where.uf = uf;
+      }
+
+      if (nivel) {
+        where.nivel = nivel;
+      }
+
+      if (busca) {
+        where.OR = [
+          { nomeCompleto: { contains: busca as string, mode: 'insensitive' } },
+          { cpf: { contains: busca as string } },
+          { celular: { contains: busca as string } },
+          { email: { contains: busca as string } }
+        ];
+      }
+
+      // Buscar motoristas
+      const [motoristas, total] = await Promise.all([
+        prisma.motorista.findMany({
+          where,
+          skip,
+          take,
+          include: {
+            usuario: {
+              select: {
+                email: true,
+                perfil: true
+              }
+            }
+          },
+          orderBy: [
+            { pontuacao: 'desc' },
+            { nomeCompleto: 'asc' }
+          ]
+        }),
+        prisma.motorista.count({ where })
+      ]);
+
+      res.json({
+        success: true,
+        data: motoristas,
+        pagination: {
+          page: Number(page),
+          limit: Number(limit),
+          total,
+          totalPages: Math.ceil(total / Number(limit))
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Buscar motorista por ID
+   */
+  async buscarPorId(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id } = req.params;
+
+      const motorista = await prisma.motorista.findUnique({
+        where: { id },
+        include: {
+          usuario: {
+            select: {
+              email: true,
+              perfil: true
+            }
+          }
+        }
+      });
+
+      if (!motorista) {
+        throw new AppError('Motorista não encontrado', 404);
+      }
+
+      res.json({
+        success: true,
+        data: motorista
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Criar novo motorista
+   */
+  async criar(req: Request, res: Response, next: NextFunction) {
+    try {
+      const dados = req.body;
+
+      // Verificar se CPF já existe
+      if (dados.cpf) {
+        const cpfExiste = await prisma.motorista.findUnique({
+          where: { cpf: dados.cpf }
+        });
+
+        if (cpfExiste) {
+          throw new AppError('CPF já cadastrado', 400);
+        }
+      }
+
+      // Verificar se email já existe
+      if (dados.email) {
+        const emailExiste = await prisma.usuario.findUnique({
+          where: { email: dados.email }
+        });
+
+        if (emailExiste) {
+          throw new AppError('Email já cadastrado', 400);
+        }
+      }
+
+      // Criar usuário e motorista em uma transação
+      const resultado = await prisma.$transaction(async (tx) => {
+        // Criar usuário
+        const usuario = await tx.usuario.create({
+          data: {
+            email: dados.email,
+            senha: dados.senha, // TODO: Hash da senha deve ser feito antes
+            perfil: 'MOTORISTA',
+            nome: dados.nomeCompleto // CORRIGIDO: adicionar nome
+          }
+        });
+
+        // Criar motorista
+        const motorista = await tx.motorista.create({
+          data: {
+            usuarioId: usuario.id,
+            nomeCompleto: dados.nomeCompleto,
+            cpf: dados.cpf,
+            // rg: dados.rg, // REMOVIDO: campo não existe no schema
+            dataNascimento: dados.dataNascimento ? new Date(dados.dataNascimento) : undefined,
+            celular: dados.celular,
+            email: dados.email,
+            // endereco: dados.endereco, // REMOVIDO: usar campos individuais
+            cidade: dados.cidade,
+            bairro: dados.bairro,
+            uf: dados.uf,
+            cep: dados.cep,
+            // cnpjMei: dados.cnpjMei, // REMOVIDO: campo não existe
+            // cnh: dados.cnh, // REMOVIDO: campo não existe
+            // categoriaCnh: dados.categoriaCnh, // REMOVIDO: campo não existe
+            // validadeCnh: dados.validadeCnh ? new Date(dados.validadeCnh) : undefined, // REMOVIDO
+            tipoVeiculo: dados.tipoVeiculo,
+            modeloVeiculo: dados.modeloVeiculo,
+            placaVeiculo: dados.placaVeiculo,
+            anoVeiculo: dados.anoVeiculo,
+            propriedadeVeiculo: dados.propriedadeVeiculo || 'PROPRIO',
+            status: dados.status || 'ATIVO',
+            pontuacao: 0,
+            nivel: 'INICIANTE'
+          }
+        });
+
+        return motorista;
+      });
+
+      res.status(201).json({
+        success: true,
+        data: resultado,
+        message: 'Motorista criado com sucesso'
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Atualizar motorista
+   */
+  async atualizar(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id } = req.params;
+      const dados = req.body;
+
+      // Verificar se motorista existe
+      const motoristaExiste = await prisma.motorista.findUnique({
+        where: { id }
+      });
+
+      if (!motoristaExiste) {
+        throw new AppError('Motorista não encontrado', 404);
+      }
+
+      // Atualizar
+      const motorista = await prisma.motorista.update({
+        where: { id },
+        data: {
+          nomeCompleto: dados.nomeCompleto,
+          celular: dados.celular,
+          email: dados.email,
+          // endereco: dados.endereco, // REMOVIDO: usar campos individuais
+          cidade: dados.cidade,
+          bairro: dados.bairro,
+          uf: dados.uf,
+          cep: dados.cep,
+          // cnpjMei: dados.cnpjMei, // REMOVIDO: campo não existe
+          // categoriaCnh: dados.categoriaCnh, // REMOVIDO: campo não existe
+          // validadeCnh: dados.validadeCnh ? new Date(dados.validadeCnh) : undefined, // REMOVIDO
+          tipoVeiculo: dados.tipoVeiculo,
+          modeloVeiculo: dados.modeloVeiculo,
+          placaVeiculo: dados.placaVeiculo,
+          anoVeiculo: dados.anoVeiculo
+        }
+      });
+
+      res.json({
+        success: true,
+        data: motorista,
+        message: 'Motorista atualizado com sucesso'
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Excluir motorista (soft delete)
+   */
+  async excluir(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id } = req.params;
+
+      // Verificar se motorista existe
+      const motoristaExiste = await prisma.motorista.findUnique({
+        where: { id }
+      });
+
+      if (!motoristaExiste) {
+        throw new AppError('Motorista não encontrado', 404);
+      }
+
+      // Atualizar status para INATIVO
+      await prisma.motorista.update({
+        where: { id },
+        data: { status: 'INATIVO' }
+      });
+
+      res.json({
+        success: true,
+        message: 'Motorista desativado com sucesso'
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Mudar status do motorista
+   */
+  async mudarStatus(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id } = req.params;
+      const { status } = req.body;
+
+      if (!status) {
+        throw new AppError('Status é obrigatório', 400);
+      }
+
+      const motorista = await prisma.motorista.update({
+        where: { id },
+        data: { status }
+      });
+
+      res.json({
+        success: true,
+        data: motorista,
+        message: 'Status atualizado com sucesso'
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Atualizar documentos do motorista
+   */
+  async atualizarDocumentos(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id } = req.params;
+      const { cpf, celular } = req.body;
+
+      const motorista = await prisma.motorista.update({
+        where: { id },
+        data: {
+          cpf,
+          celular
+          // cnh, // REMOVIDO: campo não existe
+          // categoriaCnh, // REMOVIDO: campo não existe
+          // validadeCnh: validadeCnh ? new Date(validadeCnh) : undefined, // REMOVIDO
+          // cnpjMei // REMOVIDO: campo não existe
+        }
+      });
+
+      res.json({
+        success: true,
+        data: motorista,
+        message: 'Documentos atualizados com sucesso'
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Verificar elegibilidade do motorista para receber rotas
+   */
+  async verificarElegibilidade(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id } = req.params;
+
+      const motorista = await prisma.motorista.findUnique({
+        where: { id }
+      });
+
+      if (!motorista) {
+        throw new AppError('Motorista não encontrado', 404);
+      }
+
+      const problemas: string[] = [];
+
+      // Verificar status
+      if (motorista.status !== 'ATIVO') {
+        problemas.push('Motorista não está com status ATIVO');
+      }
+
+      // Verificar documentos obrigatórios
+      if (!motorista.cpf) {
+        problemas.push('CPF não cadastrado');
+      }
+
+      if (!motorista.celular) {
+        problemas.push('Celular não cadastrado');
+      }
+
+      if (!motorista.tipoVeiculo) {
+        problemas.push('Tipo de veículo não cadastrado');
+      }
+
+      const elegivel = problemas.length === 0;
+
+      res.json({
+        success: true,
+        data: {
+          elegivel,
+          problemas,
+          motorista: {
+            id: motorista.id,
+            nomeCompleto: motorista.nomeCompleto,
+            status: motorista.status,
+            nivel: motorista.nivel,
+            pontuacao: motorista.pontuacao
+          }
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+}
+
+export default new MotoristaController();

@@ -1,0 +1,24 @@
+import { Router } from 'express';
+import { authenticate, authorize } from '../middlewares/auth.middleware';
+//import motoristaController from '../controllers/motorista.controller';
+import motoristaController from '../controllers/motorista.dashboard.controller';
+
+const router = Router();
+
+// Todas as rotas exigem ADMINISTRADOR ou DESPACHANTE_PLANEJADOR
+router.use(authenticate);
+router.use(authorize('ADMINISTRADOR', 'DESPACHANTE_PLANEJADOR'));
+
+// CRUD de motoristas
+router.get('/', motoristaController.listar);
+router.post('/', motoristaController.criar);
+router.get('/:id', motoristaController.buscarPorId);
+router.put('/:id', motoristaController.atualizar);
+router.delete('/:id', motoristaController.excluir);
+
+// Operações específicas
+router.patch('/:id/status', motoristaController.mudarStatus);
+router.patch('/:id/documentos', motoristaController.atualizarDocumentos);
+router.get('/:id/elegibilidade', motoristaController.verificarElegibilidade);
+
+export default router;

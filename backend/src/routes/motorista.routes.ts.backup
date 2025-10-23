@@ -1,0 +1,63 @@
+// backend/src/routes/motorista.routes.ts
+
+import { Router } from 'express';
+import { authenticate, authorize } from '../middlewares/auth.middleware'; // ✅ Usar o que já existe
+import { validarBatchDisponibilidade } from '../validators/disponibilidade.validator';
+import { validarErros } from '../middlewares/validation.middleware';
+
+// Controllers
+import { getDashboardMotorista } from '../controllers/motorista.dashboard.controller';
+import {
+  salvarDisponibilidadesBatch,
+  buscarSemanas,
+  buscarHistorico
+} from '../controllers/disponibilidade.controller';
+
+const router = Router();
+
+// ============================================================================
+// TODAS AS ROTAS EXIGEM AUTENTICAÇÃO E PERFIL "MOTORISTA"
+// ============================================================================
+
+router.use(authenticate);
+router.use(authorize('MOTORISTA')); // ✅ Usar authorize do seu auth.middleware
+
+// ============================================================================
+// DASHBOARD
+// ============================================================================
+
+/**
+ * GET /api/motoristas/dashboard
+ * Retorna dados consolidados para o dashboard do motorista
+ */
+router.get('/dashboard', getDashboardMotorista);
+
+// ============================================================================
+// DISPONIBILIDADE
+// ============================================================================
+
+/**
+ * GET /api/disponibilidades/semanas
+ * Retorna disponibilidades da semana atual e próxima
+ */
+router.get('/disponibilidades/semanas', buscarSemanas);
+
+/**
+ * POST /api/disponibilidades/batch
+ * Salva disponibilidades em lote
+ * ✅ VALIDAÇÃO CORRIGIDA: Permite salvar apenas dias futuros
+ */
+router.post(
+  '/disponibilidades/batch',
+  validarBatchDisponibilidade,
+  validarErros,
+  salvarDisponibilidadesBatch
+);
+
+/**
+ * GET /api/disponibilidades/historico
+ * Retorna histórico de alterações de disponibilidade
+ */
+router.get('/disponibilidades/historico', buscarHistorico);
+
+export default router;

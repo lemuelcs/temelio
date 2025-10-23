@@ -1,0 +1,189 @@
+// frontend/src/components/disponibilidade/CalendarioDisponibilidade.tsx
+import { TurnoDisponibilidade } from '../../types/disponibilidade';
+import {
+  getNomeDiaSemana,
+  formatarDiaMes,
+  getIconeTurno,
+  isHoje,
+  isPassado
+} from '../../utils/disponibilidade.utils';
+
+interface CalendarioDisponibilidadeProps {
+  titulo: string;
+  dias: Date[];
+  isDisponivel: (data: Date, turno: TurnoDisponibilidade) => boolean;
+  onToggle: (data: Date, turno: TurnoDisponibilidade) => void;
+  readonly?: boolean;
+}
+
+export function CalendarioDisponibilidade({
+  titulo,
+  dias,
+  isDisponivel,
+  onToggle,
+  readonly = false
+}: CalendarioDisponibilidadeProps) {
+  const turnos = [
+    TurnoDisponibilidade.MATUTINO,
+    TurnoDisponibilidade.VESPERTINO,
+    TurnoDisponibilidade.NOTURNO
+  ];
+
+  const getTurnoLabel = (turno: TurnoDisponibilidade): string => {
+    const labels = {
+      [TurnoDisponibilidade.MATUTINO]: '8h-12h',
+      [TurnoDisponibilidade.VESPERTINO]: '13h-17h',
+      [TurnoDisponibilidade.NOTURNO]: '18h-22h'
+    };
+    return labels[turno];
+  };
+
+  const getTotalDia = (dia: Date): number => {
+    return turnos.filter(turno => isDisponivel(dia, turno)).length;
+  };
+
+  return (
+    <div className="bg-white rounded-lg shadow-md p-4 md:p-6">
+      {/* Título da semana */}
+      <div className="mb-4">
+        <h3 className="text-lg font-semibold text-gray-900">{titulo}</h3>
+        <p className="text-sm text-gray-500">
+          {formatarDiaMes(dias[0])} a {formatarDiaMes(dias[6])}
+        </p>
+      </div>
+
+      {/* Grid do calendário */}
+      <div className="overflow-x-auto">
+        <div className="min-w-[640px]">
+          {/* Cabeçalho - Dias da semana */}
+          <div className="grid grid-cols-8 gap-2 mb-2">
+            <div className="text-xs font-semibold text-gray-600 text-center">
+              Turno
+            </div>
+            {dias.map((dia, index) => (
+              <div
+                key={index}
+                className={`text-center ${
+                  isHoje(dia)
+                    ? 'bg-blue-100 rounded-t-lg py-1'
+                    : ''
+                }`}
+              >
+                <div className="text-xs font-semibold text-gray-600">
+                  {getNomeDiaSemana(dia)}
+                </div>
+                <div className={`text-sm font-bold ${
+                  isHoje(dia) ? 'text-blue-600' : 'text-gray-900'
+                }`}>
+                  {formatarDiaMes(dia)}
+                </div>
+                {getTotalDia(dia) > 0 && (
+                  <div className="text-xs text-green-600 font-semibold">
+                    {getTotalDia(dia)}/3
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* Linhas - Turnos */}
+          {turnos.map((turno, turnoIndex) => (
+            <div
+              key={turno}
+              className={`grid grid-cols-8 gap-2 ${
+                turnoIndex < turnos.length - 1 ? 'mb-2' : ''
+              }`}
+            >
+              {/* Label do turno */}
+              <div className="flex flex-col items-center justify-center bg-gray-50 rounded-lg p-2">
+                <span className="text-2xl mb-1">{getIconeTurno(turno)}</span>
+                <span className="text-xs font-semibold text-gray-700 text-center">
+                  {getTurnoLabel(turno)}
+                </span>
+              </div>
+
+              {/* Células de cada dia */}
+              {dias.map((dia, diaIndex) => {
+                const disponivel = isDisponivel(dia, turno);
+                const desabilitado = readonly || isPassado(dia);
+
+                return (
+                  <button
+                    key={diaIndex}
+                    type="button"
+                    disabled={desabilitado}
+                    onClick={() => !desabilitado && onToggle(dia, turno)}
+                    className={`
+                      h-16 rounded-lg border-2 transition-all
+                      ${disponivel
+                        ? 'bg-green-100 border-green-500 text-green-700'
+                        : 'bg-white border-gray-200 text-gray-400'
+                      }
+                      ${!desabilitado
+                        ? 'hover:border-blue-400 hover:shadow-md cursor-pointer'
+                        : 'opacity-50 cursor-not-allowed'
+                      }
+                      ${isHoje(dia) && !desabilitado
+                        ? 'ring-2 ring-blue-300'
+                        : ''
+                      }
+                    `}
+                  >
+                    {disponivel ? (
+                      <div className="flex flex-col items-center justify-center h-full">
+                        <svg
+                          className="w-6 h-6"
+                          fill="currentColor"
+                          viewBox="0 0 20 20"
+                        >
+                          <path
+                            fillRule="evenodd"
+                            d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                            clipRule="evenodd"
+                          />
+                        </svg>
+                        <span className="text-xs font-semibold mt-1">
+                          Disponível
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-center h-full">
+                        <span className="text-xs">
+                          {desabilitado ? '—' : 'Clique'}
+                        </span>
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Legenda */}
+      <div className="mt-4 pt-4 border-t border-gray-200">
+        <div className="flex flex-wrap gap-4 text-xs text-gray-600">
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 bg-green-100 border-2 border-green-500 rounded"></div>
+            <span>Disponível</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 bg-white border-2 border-gray-200 rounded"></div>
+            <span>Não disponível</span>
+          </div>
+          {dias.some(isHoje) && (
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 bg-blue-100 ring-2 ring-blue-300 rounded"></div>
+              <span>Hoje</span>
+            </div>
+          )}
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 bg-gray-100 border-2 border-gray-300 rounded opacity-50"></div>
+            <span>Data passada</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

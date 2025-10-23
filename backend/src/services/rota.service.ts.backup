@@ -1,0 +1,708 @@
+import prisma from '../config/database';
+import { AppError } from '../middlewares/error.middleware';
+import { TipoVeiculo, TipoRota, CicloRota, StatusRota, StatusOferta, TipoBonusRota, TipoPropriedadeVeiculo } from '@prisma/client';
+
+interface CriarRotaData {
+  data: Date;
+  horarioCarregamento: string; // HH:MM
+  tipoVeiculo: TipoVeiculo;
+  tipoRota: TipoRota;
+  ciclo: CicloRota;
+  tamanhoHoras: number;
+  localId: string;
+  valorBonusHora?: number;
+  valorBonusFixo?: number;
+  tipoBonusRota?: TipoBonusRota;
+  kmProjetadoMin?: number;
+  kmProjetadoMax?: number;
+}
+
+interface AlocarRotaData {
+  rotaId: string;
+  motoristaId: string;
+}
+
+interface AuditData {
+  usuarioId: string;
+  ip: string;
+  dispositivo: string;
+  latitude?: number;
+  longitude?: number;
+}
+
+class RotaService {
+  // Criar rota
+  async criar(data: CriarRotaData, criadoPor: string, auditData: AuditData) {
+    const {
+      data: dataRota,
+      horarioCarregamento,
+      tipoVeiculo,
+      tipoRota,
+      ciclo,
+      tamanhoHoras,
+      localId,
+      valorBonusHora,
+      valorBonusFixo,
+      tipoBonusRota,
+      kmProjetadoMin,
+      kmProjetadoMax
+    } = data;
+
+    // Validar data (não pode ser no passado)
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+    const dataRotaNormalizada = new Date(dataRota);
+    dataRotaNormalizada.setHours(0, 0, 0, 0);
+
+    if (dataRotaNormalizada < hoje) {
+      throw new AppError('Data da rota não pode ser anterior à data atual', 400);
+    }
+
+    // Validar tamanho da rota (1 a 10 horas)
+    if (tamanhoHoras < 1 || tamanhoHoras > 10) {
+      throw new AppError('Tamanho da rota deve estar entre 1 e 10 horas', 400);
+    }
+
+    // Validar local
+    const local = await prisma.local.findUnique({
+      where: { id: localId }
+    });
+
+    if (!local) {
+      throw new AppError('Local não encontrado', 404);
+    }
+
+    // Buscar tabela de preços ativa para calcular valores
+    // Precisamos considerar ambos os tipos de propriedade
+    const tabelasPreco = await prisma.tabelaPreco.findMany({
+      where: {
+        tipoVeiculo,
+        ativo: true,
+        dataInicioVigencia: {
+          lte: new Date()
+        },
+        OR: [
+          { dataFimVigencia: null },
+          { dataFimVigencia: { gte: new Date() } }
+        ]
+      }
+    });
+
+    if (tabelasPreco.length === 0) {
+      throw new AppError('Tabela de preços não encontrada para este tipo de veículo', 404);
+    }
+
+    // Usar a tabela de veículo próprio como padrão para cálculo
+    const tabelaPreco = tabelasPreco.find(t => t.propriedadeVeiculo === TipoPropriedadeVeiculo.PROPRIO) || tabelasPreco[0];
+
+    // Calcular valores
+    const valorHora = tabelaPreco.valorHora;
+    const valorRotaBase = Number(valorHora) * tamanhoHoras;
+
+    // Calcular ajuda de combustível (média de km * valor por km)
+    const kmMedio = ((kmProjetadoMin || 50) + (kmProjetadoMax || 80)) / 2;
+    const valorAjudaCombustivel = kmMedio * Number(tabelaPreco.valorAjudaCombustivel);
+
+    // Calcular valor total da rota
+    let valorRota = valorRotaBase + valorAjudaCombustivel;
+
+    // Adicionar bônus se houver
+    if (tipoBonusRota === TipoBonusRota.POR_HORA && valorBonusHora) {
+      valorRota += valorBonusHora * tamanhoHoras;
+    } else if (tipoBonusRota === TipoBonusRota.VALOR_FIXO && valorBonusFixo) {
+      valorRota += valorBonusFixo;
+    }
+
+    // Criar a rota
+    const rota = await prisma.rota.create({
+      data: {
+        data: dataRota,
+        horarioCarregamento,
+        tipoVeiculo,
+        tipoRota,
+        ciclo,
+        tamanhoHoras,
+        localId,
+        valorHora,
+        valorRota,
+        valorBonusHora,
+        valorBonusFixo,
+        tipoBonusRota,
+        valorAjudaCombustivel,
+        kmProjetadoMin: kmProjetadoMin || 50,
+        kmProjetadoMax: kmProjetadoMax || 80,
+        status: StatusRota.DISPONIVEL,
+        criadoPor
+      },
+      include: {
+        local: true
+      }
+    });
+
+    // Registrar auditoria
+    await this.registrarAuditoria({
+      ...auditData,
+      acao: 'CADASTRO_ROTA',
+      entidade: 'Rota',
+      entidadeId: rota.id,
+      descricao: `Criação de rota para ${dataRota.toLocaleDateString()} - ${horarioCarregamento}`
+    });
+
+    return rota;
+  }
+
+  // Criar múltiplas rotas de uma vez (planilha)
+  async criarEmLote(rotas: CriarRotaData[], criadoPor: string, auditData: AuditData) {
+    const rotasCriadas = [];
+    const erros = [];
+
+    for (let i = 0; i < rotas.length; i++) {
+      try {
+        const rota = await this.criar(rotas[i], criadoPor, auditData);
+        rotasCriadas.push(rota);
+      } catch (error) {
+        erros.push({
+          linha: i + 1,
+          erro: error instanceof Error ? error.message : 'Erro desconhecido'
+        });
+      }
+    }
+
+    return {
+      sucesso: rotasCriadas.length,
+      total: rotas.length,
+      rotas: rotasCriadas,
+      erros
+    };
+  }
+
+  // Listar rotas com filtros
+  async listar(filtros: {
+    data?: Date;
+    dataInicio?: Date;
+    dataFim?: Date;
+    tipoVeiculo?: TipoVeiculo;
+    tipoRota?: TipoRota;
+    ciclo?: CicloRota;
+    status?: StatusRota;
+    localId?: string;
+  } = {}) {
+    const where: any = {};
+
+    if (filtros.data) {
+      const dataInicio = new Date(filtros.data);
+      dataInicio.setHours(0, 0, 0, 0);
+      const dataFim = new Date(filtros.data);
+      dataFim.setHours(23, 59, 59, 999);
+
+      where.data = {
+        gte: dataInicio,
+        lte: dataFim
+      };
+    }
+
+    if (filtros.dataInicio && filtros.dataFim) {
+      where.data = {
+        gte: filtros.dataInicio,
+        lte: filtros.dataFim
+      };
+    }
+
+    if (filtros.tipoVeiculo) {
+      where.tipoVeiculo = filtros.tipoVeiculo;
+    }
+
+    if (filtros.tipoRota) {
+      where.tipoRota = filtros.tipoRota;
+    }
+
+    if (filtros.ciclo) {
+      where.ciclo = filtros.ciclo;
+    }
+
+    if (filtros.status) {
+      where.status = filtros.status;
+    }
+
+    if (filtros.localId) {
+      where.localId = filtros.localId;
+    }
+
+    const rotas = await prisma.rota.findMany({
+      where,
+      include: {
+        local: true,
+        ofertas: {
+          include: {
+            motorista: {
+              select: {
+                id: true,
+                transporterId: true,
+                nomeCompleto: true,
+                tipoVeiculo: true,
+                status: true
+              }
+            }
+          }
+        }
+      },
+      orderBy: [
+        { data: 'asc' },
+        { horarioCarregamento: 'asc' }
+      ]
+    });
+
+    return rotas;
+  }
+
+  // Buscar rota por ID
+  async buscarPorId(id: string) {
+    const rota = await prisma.rota.findUnique({
+      where: { id },
+      include: {
+        local: true,
+        ofertas: {
+          include: {
+            motorista: {
+              select: {
+                id: true,
+                transporterId: true,
+                nomeCompleto: true,
+                celular: true,
+                tipoVeiculo: true,
+                status: true,
+                pontuacao: true
+              }
+            }
+          },
+          orderBy: {
+            dataEnvio: 'asc'
+          }
+        }
+      }
+    });
+
+    if (!rota) {
+      throw new AppError('Rota não encontrada', 404);
+    }
+
+    return rota;
+  }
+
+  // Alocar rota a motorista (enviar oferta)
+  async alocarRota(data: AlocarRotaData, auditData: AuditData) {
+    const { rotaId, motoristaId } = data;
+
+    // Verificar se a rota existe e está disponível
+    const rota = await this.buscarPorId(rotaId);
+
+    if (rota.status !== StatusRota.DISPONIVEL && rota.status !== StatusRota.ALOCADA) {
+      throw new AppError('Rota não está disponível para alocação', 400);
+    }
+
+    // Verificar elegibilidade do motorista
+    const motorista = await prisma.motorista.findUnique({
+      where: { id: motoristaId },
+      include: {
+        documentos: true,
+        contratos: {
+          where: { ativo: true }
+        }
+      }
+    });
+
+    if (!motorista) {
+      throw new AppError('Motorista não encontrado', 404);
+    }
+
+    // Validações de elegibilidade
+    const erros = [];
+
+    if (motorista.status !== 'ATIVO') {
+      erros.push(`Motorista está ${motorista.status.toLowerCase()}`);
+    }
+
+    if (motorista.tipoVeiculo !== rota.tipoVeiculo) {
+      erros.push(`Tipo de veículo incompatível. Rota requer ${rota.tipoVeiculo}`);
+    }
+
+    // Verificar idade do veículo
+    if (motorista.anoFabricacaoVeiculo) {
+      const anoAtual = new Date().getFullYear();
+      const idadeVeiculo = anoAtual - motorista.anoFabricacaoVeiculo;
+      if (idadeVeiculo > 15) {
+        erros.push('Veículo com mais de 15 anos de fabricação');
+      }
+    }
+
+    // Verificar documentos
+    if (motorista.documentos && motorista.documentos.length > 0) {
+        const doc = motorista.documentos[0];
+
+      if (doc.validadeCNH && doc.validadeCNH < new Date()) {
+        erros.push('CNH vencida');
+      }
+
+      if (doc.anoLicenciamento) {
+        const anoAtual = new Date().getFullYear();
+        if (doc.anoLicenciamento < anoAtual - 1) {
+          erros.push('CRLV inválido');
+        }
+      }
+
+      if (doc.proximaVerificacaoBRK && doc.proximaVerificacaoBRK < new Date()) {
+        erros.push('BRK vencido');
+      }
+
+      if (!doc.statusBRK) {
+        erros.push('BRK não aprovado');
+      }
+    }
+
+    // Verificar contrato ativo
+    if (!motorista.contratos || motorista.contratos.length === 0) {
+      erros.push('Motorista sem contrato ativo');
+    }
+
+    // Verificar regras de Nursery
+    if (rota.tipoRota === TipoRota.NURSERY_LEVEL_1 || rota.tipoRota === TipoRota.NURSERY_LEVEL_2) {
+      // Validar período de nursery
+      if (motorista.primeiraRotaNursery) {
+        const diasDesdeInicio = Math.floor(
+          (new Date().getTime() - motorista.primeiraRotaNursery.getTime()) / (1000 * 60 * 60 * 24)
+        );
+
+        if (rota.tipoRota === TipoRota.NURSERY_LEVEL_1 && diasDesdeInicio > 14) {
+          erros.push('Período de Nursery Level 1 expirado (máx 14 dias)');
+        }
+
+        if (rota.tipoRota === TipoRota.NURSERY_LEVEL_2) {
+          const diasDesdeL2 = motorista.iniciouNurseryL2
+            ? Math.floor((new Date().getTime() - motorista.iniciouNurseryL2.getTime()) / (1000 * 60 * 60 * 24))
+            : 0;
+
+          if (diasDesdeInicio <= 14) {
+            erros.push('Motorista ainda está em Nursery Level 1');
+          } else if (diasDesdeL2 > 14) {
+            erros.push('Período de Nursery Level 2 expirado (máx 14 dias)');
+          }
+        }
+      }
+    }
+
+    if (erros.length > 0) {
+      throw new AppError(`Motorista não elegível: ${erros.join('; ')}`, 400);
+    }
+
+    // Verificar se já existe oferta pendente para esse motorista nesta rota
+    const ofertaExistente = await prisma.ofertaRota.findFirst({
+      where: {
+        rotaId,
+        motoristaId,
+        status: StatusOferta.PENDENTE
+      }
+    });
+
+    if (ofertaExistente) {
+      throw new AppError('Já existe uma oferta pendente para este motorista nesta rota', 400);
+    }
+
+    // Criar oferta
+    const oferta = await prisma.ofertaRota.create({
+      data: {
+        rotaId,
+        motoristaId,
+        status: StatusOferta.PENDENTE,
+        dataEnvio: new Date()
+      },
+      include: {
+        rota: {
+          include: {
+            local: true
+          }
+        },
+        motorista: {
+          select: {
+            id: true,
+            transporterId: true,
+            nomeCompleto: true,
+            celular: true
+          }
+        }
+      }
+    });
+
+    // Atualizar status da rota para ALOCADA
+    await prisma.rota.update({
+      where: { id: rotaId },
+      data: { status: StatusRota.ALOCADA }
+    });
+
+    // Registrar auditoria
+    await this.registrarAuditoria({
+      ...auditData,
+      acao: 'ALOCACAO_ROTA',
+      entidade: 'OfertaRota',
+      entidadeId: oferta.id,
+      descricao: `Rota alocada para ${motorista.nomeCompleto}`
+    });
+
+    // TODO: Aqui deveria enviar notificação push para o motorista
+    // Implementaremos isso quando criarmos o sistema de notificações
+
+    return oferta;
+  }
+
+  // Alocar rotas para múltiplos motoristas
+  async alocarRotasEmLote(alocacoes: AlocarRotaData[], auditData: AuditData) {
+    const resultados = [];
+    const erros = [];
+
+    for (const alocacao of alocacoes) {
+      try {
+        const oferta = await this.alocarRota(alocacao, auditData);
+        resultados.push(oferta);
+      } catch (error) {
+        erros.push({
+          rotaId: alocacao.rotaId,
+          motoristaId: alocacao.motoristaId,
+          erro: error instanceof Error ? error.message : 'Erro desconhecido'
+        });
+      }
+    }
+
+    return {
+      sucesso: resultados.length,
+      total: alocacoes.length,
+      ofertas: resultados,
+      erros
+    };
+  }
+
+  // Responder oferta (aceitar ou recusar)
+  async responderOferta(
+    ofertaId: string,
+    motoristaId: string,
+    aceitar: boolean,
+    dadosResposta: {
+      ip: string;
+      dispositivo: string;
+      latitude?: number;
+      longitude?: number;
+    }
+  ) {
+    const oferta = await prisma.ofertaRota.findUnique({
+      where: { id: ofertaId },
+      include: {
+        rota: {
+          include: {
+            local: true
+          }
+        },
+        motorista: true
+      }
+    });
+
+    if (!oferta) {
+      throw new AppError('Oferta não encontrada', 404);
+    }
+
+    if (oferta.motoristaId !== motoristaId) {
+      throw new AppError('Esta oferta não pertence a você', 403);
+    }
+
+    if (oferta.status !== StatusOferta.PENDENTE) {
+      throw new AppError('Esta oferta já foi respondida', 400);
+    }
+
+    // Atualizar oferta
+    const ofertaAtualizada = await prisma.ofertaRota.update({
+      where: { id: ofertaId },
+      data: {
+        status: aceitar ? StatusOferta.ACEITA : StatusOferta.RECUSADA,
+        dataResposta: new Date(),
+        ipResposta: dadosResposta.ip,
+        dispositivoResposta: dadosResposta.dispositivo,
+        latitudeResposta: dadosResposta.latitude,
+        longitudeResposta: dadosResposta.longitude
+      },
+      include: {
+        rota: {
+          include: {
+            local: true
+          }
+        }
+      }
+    });
+
+    // Se aceitar, atualizar status da rota e cancelar outras ofertas pendentes
+    if (aceitar) {
+      await prisma.rota.update({
+        where: { id: oferta.rotaId },
+        data: { status: StatusRota.ACEITA }
+      });
+
+      // Cancelar outras ofertas pendentes desta rota
+      await prisma.ofertaRota.updateMany({
+        where: {
+          rotaId: oferta.rotaId,
+          id: { not: ofertaId },
+          status: StatusOferta.PENDENTE
+        },
+        data: {
+          status: StatusOferta.EXPIRADA
+        }
+      });
+
+      // Registrar primeira rota Nursery se aplicável
+      if (!oferta.motorista.primeiraRotaNursery && 
+          (oferta.rota.tipoRota === TipoRota.NURSERY_LEVEL_1 || oferta.rota.tipoRota === TipoRota.NURSERY_LEVEL_2)) {
+        await prisma.motorista.update({
+          where: { id: motoristaId },
+          data: {
+            primeiraRotaNursery: new Date(),
+            iniciouNurseryL1: oferta.rota.tipoRota === TipoRota.NURSERY_LEVEL_1 ? new Date() : undefined,
+            iniciouNurseryL2: oferta.rota.tipoRota === TipoRota.NURSERY_LEVEL_2 ? new Date() : undefined
+          }
+        });
+      }
+    } else {
+      // Se recusar, voltar status da rota para DISPONIVEL
+      await prisma.rota.update({
+        where: { id: oferta.rotaId },
+        data: { status: StatusRota.DISPONIVEL }
+      });
+    }
+
+    return ofertaAtualizada;
+  }
+
+  // Cancelar rota
+  async cancelarRota(rotaId: string, motivo: string, auditData: AuditData) {
+    const rota = await this.buscarPorId(rotaId);
+
+    if (rota.status === StatusRota.CONCLUIDA) {
+      throw new AppError('Não é possível cancelar uma rota concluída', 400);
+    }
+
+    // Calcular valor de cancelamento se a rota foi aceita
+    let valorCancelamento = 0;
+
+    if (rota.status === StatusRota.ACEITA) {
+      const ofertaAceita = rota.ofertas.find(o => o.status === StatusOferta.ACEITA);
+
+      if (ofertaAceita) {
+        const motorista = ofertaAceita.motorista;
+
+        // Buscar tabela de preços para calcular cancelamento
+        const tabelaPreco = await prisma.tabelaPreco.findFirst({
+          where: {
+            tipoVeiculo: rota.tipoVeiculo,
+            propriedadeVeiculo: motorista.tipoVeiculo === rota.tipoVeiculo 
+              ? TipoPropriedadeVeiculo.PROPRIO 
+              : TipoPropriedadeVeiculo.TRANSPORTADORA,
+            ativo: true
+          }
+        });
+
+        if (tabelaPreco) {
+          valorCancelamento = Number(tabelaPreco.valorCancelamentoHora) * rota.tamanhoHoras;
+        }
+      }
+    }
+
+    // Atualizar rota
+    const rotaCancelada = await prisma.rota.update({
+      where: { id: rotaId },
+      data: {
+        status: StatusRota.CANCELADA,
+        motivoCancelamento: motivo,
+        dataCancelamento: new Date()
+      }
+    });
+
+    // Expirar todas as ofertas pendentes
+    await prisma.ofertaRota.updateMany({
+      where: {
+        rotaId,
+        status: { in: [StatusOferta.PENDENTE, StatusOferta.ACEITA] }
+      },
+      data: {
+        status: StatusOferta.EXPIRADA
+      }
+    });
+
+    // Registrar auditoria
+    await this.registrarAuditoria({
+      ...auditData,
+      acao: 'CANCELAMENTO_ROTA',
+      entidade: 'Rota',
+      entidadeId: rotaId,
+      descricao: `Rota cancelada. Motivo: ${motivo}. Valor cancelamento: R$ ${valorCancelamento.toFixed(2)}`
+    });
+
+    return {
+      rota: rotaCancelada,
+      valorCancelamento
+    };
+  }
+
+  // Buscar ofertas de um motorista
+  async buscarOfertasMotorista(motoristaId: string, filtros: {
+    status?: StatusOferta;
+    dataInicio?: Date;
+    dataFim?: Date;
+  } = {}) {
+    const where: any = {
+      motoristaId
+    };
+
+    if (filtros.status) {
+      where.status = filtros.status;
+    }
+
+    if (filtros.dataInicio || filtros.dataFim) {
+      where.rota = {
+        data: {
+          ...(filtros.dataInicio && { gte: filtros.dataInicio }),
+          ...(filtros.dataFim && { lte: filtros.dataFim })
+        }
+      };
+    }
+
+    const ofertas = await prisma.ofertaRota.findMany({
+      where,
+      include: {
+        rota: {
+          include: {
+            local: true
+          }
+        }
+      },
+      orderBy: {
+        dataEnvio: 'desc'
+      }
+    });
+
+    return ofertas;
+  }
+
+  // Registrar auditoria
+  private async registrarAuditoria(data: {
+    usuarioId: string;
+    acao: string;
+    entidade: string;
+    entidadeId?: string;
+    descricao?: string;
+    ip: string;
+    dispositivo: string;
+    latitude?: number;
+    longitude?: number;
+  }) {
+    await prisma.auditLog.create({
+      data
+    });
+  }
+}
+
+export default new RotaService();

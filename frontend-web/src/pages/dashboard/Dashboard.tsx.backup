@@ -1,0 +1,69 @@
+import { Users, Truck, AlertCircle, TrendingUp } from 'lucide-react';
+
+// Componente de Card de Estatística
+function StatCard({ title, value, icon: Icon, color }: any) {
+  return (
+    <div className="bg-white rounded-lg shadow p-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-sm font-medium text-gray-600">{title}</p>
+          <p className="text-2xl font-bold text-gray-900 mt-2">{value}</p>
+        </div>
+        <div className={`p-3 rounded-full ${color}`}>
+          <Icon className="w-6 h-6 text-white" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function Dashboard() {
+  return (
+    <div className="space-y-6">
+      {/* Cabeçalho */}
+      <div>
+        <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
+        <p className="text-gray-600 mt-1">Visão geral do sistema</p>
+      </div>
+
+      {/* Cards de Estatísticas */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <StatCard
+          title="Motoristas Ativos"
+          value="24"
+          icon={Users}
+          color="bg-blue-500"
+        />
+        <StatCard
+          title="Rotas Hoje"
+          value="18"
+          icon={Truck}
+          color="bg-green-500"
+        />
+        <StatCard
+          title="Alertas Abertos"
+          value="7"
+          icon={AlertCircle}
+          color="bg-red-500"
+        />
+        <StatCard
+          title="Taxa de Compliance"
+          value="85%"
+          icon={TrendingUp}
+          color="bg-purple-500"
+        />
+      </div>
+
+      {/* Informação Temporária */}
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
+        <h2 className="text-lg font-semibold text-blue-900 mb-2">
+          🎉 Frontend em Desenvolvimento
+        </h2>
+        <p className="text-blue-800">
+          O dashboard completo com gráficos e KPIs será implementado nas próximas etapas.
+          Por enquanto, você já pode navegar pelo menu lateral e acessar as diferentes seções do sistema.
+        </p>
+      </div>
+    </div>
+  );
+}
