@@ -85,14 +85,14 @@ enum TipoPropriedade {
 // ========== MODELS ==========
 
 model Usuario {
-  id                        String                      @id
+  id                        String                      @id @default(cuid())
   email                     String                      @unique
   senha                     String
   nome                      String
   perfil                    TipoPerfil
   ativo                     Boolean                     @default(true)
   createdAt                 DateTime                    @default(now())
-  updatedAt                 DateTime
+  updatedAt                 DateTime                    @updatedAt
   
   // Relações
   auditLogs                 AuditLog[]
@@ -103,7 +103,7 @@ model Usuario {
 }
 
 model Motorista {
-  id                          String              @id
+  id                          String              @id @default(cuid())
   transporterId               String?             @unique @db.VarChar(14)
   nomeCompleto                String              @db.VarChar(50)
   celular                     String              @db.VarChar(11)
@@ -130,7 +130,7 @@ model Motorista {
   nivel                       String?             @default("INICIANTE") @db.VarChar(45)
   usuarioId                   String              @unique
   createdAt                   DateTime            @default(now())
-  updatedAt                   DateTime
+  updatedAt                   DateTime            @updatedAt
   
   // Relações
   usuario                     Usuario             @relation(fields: [usuarioId], references: [id])
@@ -151,7 +151,7 @@ model Motorista {
 }
 
 model DocumentoMotorista {
-  id                    String      @id
+  id                    String      @id @default(cuid())
   motoristaId           String      @unique
   numeroCNH             String?     @db.VarChar(11)
   validadeCNH           DateTime?
@@ -160,7 +160,7 @@ model DocumentoMotorista {
   proximaVerificacaoBRK DateTime?
   statusBRK             Boolean     @default(false)
   createdAt             DateTime    @default(now())
-  updatedAt             DateTime
+  updatedAt             DateTime    @updatedAt
   
   motorista             Motorista   @relation(fields: [motoristaId], references: [id])
 
@@ -170,7 +170,7 @@ model DocumentoMotorista {
 }
 
 model ContratoMotorista {
-  id                  String      @id
+  id                  String      @id @default(cuid())
   motoristaId         String
   numeroContrato      String      @unique @db.VarChar(20)
   dataAssinatura      DateTime
@@ -179,7 +179,7 @@ model ContratoMotorista {
   cnpjMEI             String?     @db.VarChar(14)
   razaoSocialMEI      String?     @db.VarChar(100)
   createdAt           DateTime    @default(now())
-  updatedAt           DateTime
+  updatedAt           DateTime    @updatedAt
   
   motorista           Motorista   @relation(fields: [motoristaId], references: [id])
 
@@ -189,13 +189,13 @@ model ContratoMotorista {
 }
 
 model Disponibilidade {
-  id          String      @id
+  id          String      @id @default(cuid())
   motoristaId String
   data        DateTime    @db.Date
   ciclo       CicloRota
   disponivel  Boolean     @default(true)
   createdAt   DateTime    @default(now())
-  updatedAt   DateTime
+  updatedAt   DateTime    @updatedAt
   
   motorista   Motorista   @relation(fields: [motoristaId], references: [id])
 
@@ -205,7 +205,7 @@ model Disponibilidade {
 }
 
 model HistoricoDisponibilidade {
-  id               String      @id
+  id               String      @id @default(cuid())
   motoristaId      String
   data             DateTime    @db.Date
   ciclo            CicloRota
@@ -223,7 +223,7 @@ model HistoricoDisponibilidade {
 }
 
 model HistoricoStatusMotorista {
-  id             String          @id
+  id             String          @id @default(cuid())
   motoristaId    String
   statusAnterior StatusMotorista
   statusNovo     StatusMotorista
@@ -240,7 +240,7 @@ model HistoricoStatusMotorista {
 }
 
 model Alerta {
-  id            String      @id
+  id            String      @id @default(cuid())
   tipo          String      @db.VarChar(50)
   motoristaId   String?
   titulo        String      @db.VarChar(100)
@@ -249,7 +249,7 @@ model Alerta {
   resolvido     Boolean     @default(false)
   dataResolucao DateTime?
   createdAt     DateTime    @default(now())
-  updatedAt     DateTime
+  updatedAt     DateTime    @updatedAt
   
   motorista     Motorista?  @relation(fields: [motoristaId], references: [id])
 
@@ -259,7 +259,7 @@ model Alerta {
 }
 
 model Faturamento {
-  id                    String      @id
+  id                    String      @id @default(cuid())
   motoristaId           String
   quinzena              Int
   mes                   Int
@@ -272,7 +272,7 @@ model Faturamento {
   pago                  Boolean     @default(false)
   dataPagamento         DateTime?
   createdAt             DateTime    @default(now())
-  updatedAt             DateTime
+  updatedAt             DateTime    @updatedAt
   
   motorista             Motorista   @relation(fields: [motoristaId], references: [id])
 
@@ -282,7 +282,7 @@ model Faturamento {
 }
 
 model Local {
-  id        String   @id
+  id        String   @id @default(cuid())
   codigo    String   @unique @db.VarChar(10)
   nome      String   @db.VarChar(100)
   endereco  String   @db.Text
@@ -294,7 +294,7 @@ model Local {
   cep       String?  @db.VarChar(8)
   ativo     Boolean  @default(true)
   createdAt DateTime @default(now())
-  updatedAt DateTime
+  updatedAt DateTime @updatedAt
   
   rotas     Rota[]
 
@@ -302,7 +302,7 @@ model Local {
 }
 
 model Rota {
-  id                    String         @id
+  id                    String         @id @default(cuid())
   dataRota              DateTime       @db.Date
   horaInicio            DateTime       @db.Time(0)
   horaFim               DateTime?      @db.Time(0)
@@ -343,7 +343,7 @@ model Rota {
   motoristaId           String?
   criadoPor             String
   createdAt             DateTime       @default(now())
-  updatedAt             DateTime
+  updatedAt             DateTime       @updatedAt
   
   local                 Local          @relation(fields: [localId], references: [id])
   motorista             Motorista?     @relation(fields: [motoristaId], references: [id])
@@ -361,7 +361,7 @@ model Rota {
 }
 
 model OfertaRota {
-  id                  String        @id
+  id                  String        @id @default(cuid())
   rotaId              String
   motoristaId         String
   status              StatusOferta  @default(PENDENTE)
@@ -374,7 +374,7 @@ model OfertaRota {
   longitudeResposta   Decimal?      @db.Decimal(11, 8)
   adicionouAgenda     Boolean       @default(false)
   createdAt           DateTime      @default(now())
-  updatedAt           DateTime
+  updatedAt           DateTime      @updatedAt
   
   motorista           Motorista     @relation(fields: [motoristaId], references: [id])
   rota                Rota          @relation(fields: [rotaId], references: [id])
@@ -385,7 +385,7 @@ model OfertaRota {
 }
 
 model TabelaPreco {
-  id                   String              @id
+  id                   String              @id @default(cuid())
   tipoVeiculo          TipoVeiculo?
   propriedadeVeiculo   PropriedadeVeiculo?
   tipoServico          TipoServico?
@@ -405,7 +405,7 @@ model TabelaPreco {
   ativo                Boolean             @default(true)
   criadoPor            String?
   createdAt            DateTime            @default(now())
-  updatedAt            DateTime
+  updatedAt            DateTime            @updatedAt
   
   rotas                Rota[]
 
@@ -416,7 +416,7 @@ model TabelaPreco {
 }
 
 model AuditLog {
-  id          String   @id
+  id          String   @id @default(cuid())
   usuarioId   String
   acao        String   @db.VarChar(100)
   entidade    String   @db.VarChar(50)
@@ -436,7 +436,7 @@ model AuditLog {
 }
 
 model MetricaEntrega {
-  id                  String    @id
+  id                  String    @id @default(cuid())
   rotaId              String
   motoristaId         String
   data                DateTime  @db.Date
@@ -451,7 +451,7 @@ model MetricaEntrega {
   atrasouCarregamento Boolean   @default(false)
   minutosAtraso       Int?
   createdAt           DateTime  @default(now())
-  updatedAt           DateTime
+  updatedAt           DateTime  @updatedAt
 
   @@index([data])
   @@index([motoristaId])

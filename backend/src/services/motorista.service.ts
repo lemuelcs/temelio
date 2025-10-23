@@ -1,6 +1,6 @@
 import prisma from '../config/database';
 import { AppError } from '../middlewares/error.middleware';
-import { TipoVeiculo, StatusMotorista, TipoPropriedadeVeiculo } from '@prisma/client';
+import { TipoVeiculo, StatusMotorista, PropriedadeVeiculo } from '@prisma/client';
 import bcrypt from 'bcrypt';
 
 interface CadastroMotoristaData {
@@ -18,7 +18,7 @@ interface CadastroMotoristaData {
   email: string;
   chavePix?: string | null;
   tipoVeiculo: TipoVeiculo;
-  propriedadeVeiculo: TipoPropriedadeVeiculo;
+  propriedadeVeiculo: PropriedadeVeiculo;
   senha: string;
   anoFabricacaoVeiculo?: number | null;
   placaVeiculo?: string | null;
@@ -49,7 +49,7 @@ interface AtualizacaoMotoristaData {
   email?: string;
   chavePix?: string | null;
   tipoVeiculo?: TipoVeiculo;
-  propriedadeVeiculo?: TipoPropriedadeVeiculo;
+  propriedadeVeiculo?: PropriedadeVeiculo;
   anoFabricacaoVeiculo?: number | null;
   placaVeiculo?: string | null;
   status?: StatusMotorista;
@@ -221,7 +221,7 @@ class MotoristaService {
             perfil: true
           }
         },
-        documentos: true,
+        documento: true,
         contratos: true
       }
     });
@@ -270,7 +270,7 @@ class MotoristaService {
     const motoristas = await prisma.motorista.findMany({
       where,
       include: {
-        documentos: true,
+        documento: true,
         contratos: {
           where: { ativo: true }
         }
@@ -297,7 +297,7 @@ class MotoristaService {
             ativo: true
           }
         },
-        documentos: true,
+        documento: true,
         contratos: {
           where: { ativo: true }
         },
@@ -385,7 +385,7 @@ class MotoristaService {
             perfil: true
           }
         },
-        documentos: true,
+        documento: true,
         contratos: {
           where: { ativo: true }
         }
@@ -542,7 +542,7 @@ class MotoristaService {
     const motorista = await prisma.motorista.findUnique({
       where: { id: motoristaId },
       include: {
-        documentos: true
+        documento: true
       }
     });
 
@@ -565,7 +565,7 @@ class MotoristaService {
       }
     }
 
-    const documento = Array.isArray(motorista.documentos) ? motorista.documentos[0] : null;
+    const documento = Array.isArray(motorista.documento) ? motorista.documento[0] : null;
 
     if (!documento) {
       erros.push('Documentos não cadastrados');

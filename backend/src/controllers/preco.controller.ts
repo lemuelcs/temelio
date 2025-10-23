@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import precoService from '../services/preco.service';
 import { AppError } from '../middlewares/error.middleware';
-import { TipoVeiculo, TipoPropriedadeVeiculo } from '@prisma/client';
+import { TipoVeiculo, PropriedadeVeiculo } from '@prisma/client';
 
 class PrecoController {
   // POST /api/precos
@@ -24,7 +24,7 @@ class PrecoController {
 
       const tabela = await precoService.criar({
         tipoVeiculo: tipoVeiculo as TipoVeiculo,
-        propriedadeVeiculo: propriedadeVeiculo as TipoPropriedadeVeiculo,
+        propriedadeVeiculo: propriedadeVeiculo as PropriedadeVeiculo,
         valorHora: Number(valorHora),
         valorCancelamentoHora: Number(valorCancelamentoHora),
         valorKm: Number(valorKm),
@@ -49,7 +49,7 @@ class PrecoController {
 
       const filtros = {
         tipoVeiculo: tipoVeiculo as TipoVeiculo,
-        propriedadeVeiculo: propriedadeVeiculo as TipoPropriedadeVeiculo,
+        propriedadeVeiculo: propriedadeVeiculo as PropriedadeVeiculo,
         ativo: ativo !== undefined ? ativo === 'true' : undefined
       };
 
@@ -74,7 +74,7 @@ class PrecoController {
 
       const tabela = await precoService.buscarAtiva(
         tipoVeiculo as TipoVeiculo,
-        propriedadeVeiculo as TipoPropriedadeVeiculo
+        propriedadeVeiculo as PropriedadeVeiculo
       );
 
       res.json({

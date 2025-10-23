@@ -149,7 +149,7 @@ class MotoristaController {
 
         // 3. Criar documentos
         if (dados.numeroCNH || dados.validadeCNH || dados.dataVerificacaoBRK) {
-          await tx.documento.create({
+          await tx.documentoMotorista.create({
             data: {
               motoristaId: motorista.id,
               numeroCNH: dados.numeroCNH,
@@ -164,7 +164,7 @@ class MotoristaController {
 
         // 4. Criar contrato MEI
         if (dados.cnpjMEI || dados.razaoSocialMEI || dados.numeroContrato) {
-          await tx.contratos.create({
+          await tx.contratoMotorista.create({
             data: {
               motoristaId: motorista.id,
               numeroContrato: dados.numeroContrato || `CONTRATO-${Date.now()}`,
@@ -227,10 +227,10 @@ class MotoristaController {
         });
 
         // 2. Atualizar/Criar documentos
-        const documentoExiste = await tx.documento.findUnique({ where: { motoristaId: id } });
+        const documentoExiste = await tx.documentoMotorista.findUnique({ where: { motoristaId: id } });
 
         if (documentoExiste) {
-          await tx.documento.update({
+          await tx.documentoMotorista.update({
             where: { motoristaId: id },
             data: {
               numeroCNH: dados.numeroCNH,
@@ -242,7 +242,7 @@ class MotoristaController {
             }
           });
         } else if (dados.numeroCNH || dados.validadeCNH || dados.dataVerificacaoBRK) {
-          await tx.documento.create({
+          await tx.documentoMotorista.create({
             data: {
               motoristaId: id,
               numeroCNH: dados.numeroCNH,
@@ -257,14 +257,14 @@ class MotoristaController {
 
         // 3. Atualizar contrato ativo ou criar novo
         if (dados.cnpjMEI || dados.razaoSocialMEI || dados.numeroContrato) {
-          const contratoAtivo = await tx.contratos.findFirst({
+          const contratoAtivo = await tx.contratoMotorista.findFirst({
             where: { motoristaId: id, ativo: true },
             orderBy: { createdAt: 'desc' }
           });
 
           if (contratoAtivo) {
             // Atualizar contrato existente
-            await tx.contratos.update({
+            await tx.contratoMotorista.update({
               where: { id: contratoAtivo.id },
               data: {
                 numeroContrato: dados.numeroContrato || contratoAtivo.numeroContrato,
@@ -276,7 +276,7 @@ class MotoristaController {
             });
           } else {
             // Criar novo contrato
-            await tx.contratos.create({
+            await tx.contratoMotorista.create({
               data: {
                 motoristaId: id,
                 numeroContrato: dados.numeroContrato || `CONTRATO-${Date.now()}`,

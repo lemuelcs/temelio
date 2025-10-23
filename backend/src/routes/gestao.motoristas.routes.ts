@@ -21,7 +21,7 @@ router.delete('/:id', motoristaController.excluir);
 
 // Operações específicas
 router.patch('/:id/status', motoristaController.mudarStatus);
-router.patch('/:id/documentos', motoristaController.atualizarDocumentos);
+//router.patch('/:id/documentos', motoristaController.atualizarDocumentos);
 router.get('/:id/elegibilidade', motoristaController.verificarElegibilidade);
 
 // Dashboard (separado para evitar conflito com /:id)

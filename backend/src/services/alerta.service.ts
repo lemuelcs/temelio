@@ -14,7 +14,7 @@ class AlertaService {
         status: 'ATIVO'
       },
       include: {
-        documentos: true,
+        documento: true,
         contratos: {
           where: { ativo: true }
         }
@@ -39,7 +39,7 @@ class AlertaService {
     const motorista = await prisma.motorista.findUnique({
       where: { id: motoristaId },
       include: {
-        documentos: true,
+        documento: true,
         contratos: {
           where: { ativo: true }
         }
@@ -79,7 +79,7 @@ class AlertaService {
       }
     }
 
-    const documento = motorista.documentos;
+    const documento = motorista.documento;
 
     if (documento) {
       // 2. Verificar CNH
