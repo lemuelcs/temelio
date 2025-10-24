@@ -99,6 +99,7 @@ model Usuario {
   nome                      String
   perfil                    TipoPerfil
   ativo                     Boolean                     @default(true)
+  deveAlterarSenha          Boolean                     @default(false)
   createdAt                 DateTime                    @default(now())
   updatedAt                 DateTime                    @updatedAt
   

@@ -216,6 +216,83 @@ class RotaService {
     return rota;
   }
 
+  async criarOuRecriarOferta(
+    rotaId: string,
+    motoristaId: string,
+    options: { forcarReoferta?: boolean } = {}
+  ) {
+    const { forcarReoferta = false } = options;
+    const statusPermitidos = forcarReoferta
+      ? [
+          StatusRota.DISPONIVEL,
+          StatusRota.RECUSADA,
+          StatusRota.OFERTADA,
+          StatusRota.ACEITA,
+          StatusRota.CONFIRMADA,
+        ]
+      : [StatusRota.DISPONIVEL, StatusRota.RECUSADA, StatusRota.OFERTADA];
+
+    return prisma.$transaction(async (tx) => {
+      const rota = await tx.rota.findUnique({
+        where: { id: rotaId },
+        select: {
+          id: true,
+          status: true,
+        },
+      });
+
+      if (!rota) {
+        throw new AppError('Rota não encontrada', 404);
+      }
+
+      if (!statusPermitidos.includes(rota.status as StatusRota)) {
+        throw new AppError('A rota selecionada não está disponível para oferta', 400);
+      }
+
+      await tx.ofertaRota.deleteMany({
+        where: { rotaId },
+      });
+
+      const rotaAtualizada = await tx.rota.update({
+        where: { id: rotaId },
+        data: {
+          status: StatusRota.OFERTADA,
+          motoristaId: null,
+          statusTracking: StatusTracking.AGUARDANDO,
+          timestampACaminho: null,
+          timestampNoLocal: null,
+          timestampRotaIniciada: null,
+          timestampRotaConcluida: null,
+          horaInicioReal: null,
+          horaFimReal: null,
+        },
+      });
+
+      const oferta = await tx.ofertaRota.create({
+        data: {
+          rotaId,
+          motoristaId,
+          status: StatusOferta.PENDENTE,
+          dataEnvio: new Date(),
+        },
+        include: {
+          motorista: {
+            select: {
+              id: true,
+              nomeCompleto: true,
+              celular: true,
+            },
+          },
+        },
+      });
+
+      return {
+        rota: rotaAtualizada,
+        oferta,
+      };
+    });
+  }
+
   // ========================================
   // D+0: CONFIRMAR ROTA (Roteirização)
   // ========================================
@@ -691,6 +768,42 @@ class RotaService {
     return {
       message: 'Rota excluída com sucesso'
     };
+  }
+
+  async cancelarOfertas(rotaId: string) {
+    return prisma.$transaction(async (tx) => {
+      const rota = await tx.rota.findUnique({
+        where: { id: rotaId },
+        select: {
+          id: true,
+        },
+      });
+
+      if (!rota) {
+        throw new AppError('Rota não encontrada', 404);
+      }
+
+      await tx.ofertaRota.deleteMany({
+        where: { rotaId },
+      });
+
+      const rotaAtualizada = await tx.rota.update({
+        where: { id: rotaId },
+        data: {
+          status: StatusRota.DISPONIVEL,
+          motoristaId: null,
+          statusTracking: StatusTracking.AGUARDANDO,
+          timestampACaminho: null,
+          timestampNoLocal: null,
+          timestampRotaIniciada: null,
+          timestampRotaConcluida: null,
+          horaInicioReal: null,
+          horaFimReal: null,
+        },
+      });
+
+      return rotaAtualizada;
+    });
   }
 
   // ========================================

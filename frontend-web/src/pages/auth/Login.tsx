@@ -9,7 +9,7 @@ export default function Login() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   
-  const { login, user } = useAuth(); // ✅ Adicionar 'user' do contexto
+  const { login } = useAuth();
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -18,24 +18,18 @@ export default function Login() {
     setLoading(true);
 
     try {
-      await login(email, senha);
-      
-      // ✅ CORREÇÃO: Redirecionar baseado no perfil do usuário
-      // O AuthContext deve setar o user após login bem-sucedido
-      
-      // Pequeno delay para garantir que o user foi atualizado
-      setTimeout(() => {
-        const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
-        
-        if (currentUser.perfil === 'MOTORISTA') {
-          console.log('🚗 Redirecionando motorista para dashboard');
-          navigate('/motorista/dashboard', { replace: true });
-        } else {
-          console.log('👔 Redirecionando gestor para dashboard');
-          navigate('/dashboard', { replace: true });
-        }
-      }, 100);
-      
+      const userData = await login(email, senha);
+
+      if (userData.deveAlterarSenha) {
+        navigate('/alterar-senha', { replace: true });
+        return;
+      }
+
+      if (userData.perfil === 'MOTORISTA') {
+        navigate('/motorista/dashboard', { replace: true });
+      } else {
+        navigate('/dashboard', { replace: true });
+      }
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -109,19 +103,6 @@ export default function Login() {
             </button>
           </form>
 
-          {/* Dica de credenciais */}
-          <div className="mt-6 p-4 bg-blue-50 rounded-lg">
-            <p className="text-sm text-blue-800 font-medium mb-2">Credenciais de teste:</p>
-            <p className="text-xs text-blue-700">
-              <strong>Planejador:</strong> planejador@transportadora.com / planejador123
-            </p>
-            <p className="text-xs text-blue-700">
-              <strong>Admin:</strong> admin@transportadora.com / admin123
-            </p>
-            <p className="text-xs text-blue-700">
-              <strong>Motorista:</strong> motorista@temelio.com / senha123
-            </p>
-          </div>
         </div>
       </div>
     </div>

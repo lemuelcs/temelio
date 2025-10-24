@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Send, Calendar, Clock, MapPin, DollarSign, User, AlertCircle, CheckCircle } from 'lucide-react';
+import { Send, Calendar, Clock, MapPin, DollarSign, User, AlertCircle, CheckCircle, Edit2, Trash2 } from 'lucide-react';
 import api from '../../services/api';
 
 interface Motorista {
@@ -162,6 +162,10 @@ export default function RotasAlocacao() {
   const queryClient = useQueryClient();
   const [alocacoes, setAlocacoes] = useState<Alocacao[]>([]);
   const [filterData, setFilterData] = useState<string>('');
+  const [editingRoutes, setEditingRoutes] = useState<Record<string, boolean>>({});
+  const [editSelections, setEditSelections] = useState<Record<string, string>>({});
+  const [rotaReofertaEmProgresso, setRotaReofertaEmProgresso] = useState<string | null>(null);
+  const [rotaCancelamentoEmProgresso, setRotaCancelamentoEmProgresso] = useState<string | null>(null);
 
   // Definir filtro de data padrão (hoje e amanhã)
   useEffect(() => {
@@ -169,64 +173,6 @@ export default function RotasAlocacao() {
     setFilterData(toLocalDateInput(hoje));
   }, []);
 
-  // Função para gerar relatório de debug consolidado
-  const gerarRelatorioDebug = () => {
-    const relatorio = {
-      timestamp: new Date().toISOString(),
-      filtroData: filterData,
-      resumo: {
-        totalRotas: rotas.length,
-        totalMotoristas: motoristas.length,
-        totalDisponibilidades: disponibilidades.length,
-        totalAlocacoes: alocacoes.length,
-      },
-      rotas: rotas.map((r: any) => ({
-        id: r.id,
-        codigoRota: r.codigoRota,
-        dataRota: r.dataRota,
-        cicloRota: r.cicloRota,
-        tipoVeiculo: r.tipoVeiculo,
-        status: r.status,
-      })),
-      motoristas: motoristas.map((m: any) => ({
-        id: m.id,
-        nomeCompleto: m.nomeCompleto,
-        tipoVeiculo: m.tipoVeiculo,
-        status: m.status,
-      })),
-      disponibilidades: disponibilidades.map((d: any) => ({
-        motoristaId: d.motoristaId,
-        data: d.data,
-        ciclo: d.ciclo,
-        disponivel: d.disponivel,
-      })),
-      analiseElegibilidade: rotas.map((rota: any) => {
-        const elegiveis = getMotoristasPorRota(rota);
-        return {
-          rotaId: rota.id,
-          codigoRota: rota.codigoRota,
-          dataRota: rota.dataRota,
-          cicloRota: rota.cicloRota,
-          tipoVeiculo: rota.tipoVeiculo,
-          motoristasElegiveis: elegiveis.length,
-          motoristas: elegiveis.map((m: any) => ({
-            id: m.id,
-            nome: m.nomeCompleto,
-          })),
-        };
-      }),
-    };
-
-    console.log('\n\n═══════════════════════════════════════════════════════');
-    console.log('📋 RELATÓRIO DE DEBUG - ALOCAÇÃO DE ROTAS');
-    console.log('═══════════════════════════════════════════════════════\n');
-    console.log(JSON.stringify(relatorio, null, 2));
-    console.log('\n═══════════════════════════════════════════════════════');
-    console.log('💡 COPIE O JSON ACIMA E ENVIE PARA ANÁLISE');
-    console.log('═══════════════════════════════════════════════════════\n\n');
-
-    return relatorio;
-  };
 
   // Buscar rotas disponíveis
   const { data: rotas = [], isLoading: loadingRotas } = useQuery({
@@ -244,7 +190,6 @@ export default function RotasAlocacao() {
         });
         allowedStatuses.forEach((status) => params.append('status', status));
 
-        console.log('📊 BUSCANDO ROTAS:', { status: allowedStatuses, dataInicio, dataFim });
         const response = await api.get(`/rotas?${params.toString()}`);
         const dados = response.data?.data?.rotas || response.data?.rotas || response.data;
         const resultado = (Array.isArray(dados) ? dados : []) as Rota[];
@@ -261,18 +206,8 @@ export default function RotasAlocacao() {
 
           return timeToMinutes(a.horaInicio) - timeToMinutes(b.horaInicio);
         });
-        console.log('📊 ROTAS CARREGADAS:', ordenado.length);
-        console.log('📊 Detalhes das rotas:', ordenado.map((r: any) => ({
-          id: r.id,
-          codigoRota: r.codigoRota,
-          dataRota: r.dataRota,
-          cicloRota: r.cicloRota,
-          tipoVeiculo: r.tipoVeiculo,
-          status: r.status,
-        })));
         return ordenado;
-      } catch (error) {
-        console.error('Erro ao buscar rotas:', error);
+      } catch (_error) {
         return [];
       }
     },
@@ -287,17 +222,8 @@ export default function RotasAlocacao() {
         const params = new URLSearchParams({ status: 'ATIVO', limit: '200' });
         const response = await api.get(`/gestao/motoristas?${params.toString()}`);
         const dados = response.data?.data?.motoristas || response.data?.motoristas || response.data;
-        const resultado = Array.isArray(dados) ? dados : [];
-        console.log('📊 MOTORISTAS CARREGADOS:', resultado.length);
-        console.log('📊 Detalhes dos motoristas:', resultado.map((m: any) => ({
-          id: m.id,
-          nome: m.nomeCompleto,
-          tipoVeiculo: m.tipoVeiculo,
-          status: m.status,
-        })));
-        return resultado;
-      } catch (error) {
-        console.error('Erro ao buscar motoristas:', error);
+        return Array.isArray(dados) ? dados : [];
+      } catch (_error) {
         return [];
       }
     },
@@ -317,41 +243,16 @@ export default function RotasAlocacao() {
           dataFim,
         });
 
-        console.log('📊 BUSCANDO DISPONIBILIDADES:', { dataInicio, dataFim });
         const response = await api.get(`/gestao/disponibilidades/intervalo?${params.toString()}`);
         const dados = response.data?.data || response.data;
-        const resultado = Array.isArray(dados) ? dados : [];
-        console.log('📊 DISPONIBILIDADES CARREGADAS:', resultado.length);
-        console.log('📊 Detalhes das disponibilidades:', resultado.map((d: any) => ({
-          motoristaId: d.motoristaId,
-          data: d.data,
-          ciclo: d.ciclo,
-          disponivel: d.disponivel,
-        })));
-        return resultado;
+        return Array.isArray(dados) ? dados : [];
       } catch (error: any) {
-        console.error('Erro ao buscar disponibilidades:', error);
-        console.error('Detalhes do erro:', {
-          status: error.response?.status,
-          message: error.response?.data?.message,
-          url: error.config?.url
-        });
         throw error; // Propagar o erro para que o useQuery possa capturá-lo
       }
     },
     enabled: !!filterData,
     retry: 1, // Tentar apenas uma vez em caso de erro
   });
-
-  // Gerar relatório de debug quando os dados mudarem
-  useEffect(() => {
-    if (rotas.length > 0 && motoristas.length > 0) {
-      // Aguardar um pouco para garantir que todos os logs foram processados
-      setTimeout(() => {
-        gerarRelatorioDebug();
-      }, 1000);
-    }
-  }, [rotas, motoristas, disponibilidades]);
 
   // Enviar ofertas de rotas
   const enviarOfertasMutation = useMutation({
@@ -370,11 +271,62 @@ export default function RotasAlocacao() {
       alert('Ofertas enviadas com sucesso aos motoristas!');
       setAlocacoes([]);
       queryClient.invalidateQueries({ queryKey: ['rotas-disponiveis'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
     },
     onError: (error: any) => {
       const mensagem = error.response?.data?.message || 'Erro ao enviar ofertas';
       alert(mensagem);
-      console.error('Erro:', error.response?.data);
+    },
+  });
+
+  const reofertaMutation = useMutation({
+    mutationFn: async ({ rotaId, motoristaId }: { rotaId: string; motoristaId: string }) =>
+      api.patch(`/ofertas-rotas/${rotaId}/editar`, { motoristaId }),
+    onMutate: ({ rotaId }) => {
+      setRotaReofertaEmProgresso(rotaId);
+    },
+    onSuccess: (_data, variables) => {
+      alert('Oferta atualizada com sucesso!');
+      setEditingRoutes((prev) => ({ ...prev, [variables.rotaId]: false }));
+      setEditSelections((prev) => {
+        const copia = { ...prev };
+        delete copia[variables.rotaId];
+        return copia;
+      });
+      queryClient.invalidateQueries({ queryKey: ['rotas-disponiveis'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
+    },
+    onError: (error: any) => {
+      const mensagem = error.response?.data?.message || 'Erro ao atualizar oferta';
+      alert(mensagem);
+    },
+    onSettled: () => {
+      setRotaReofertaEmProgresso(null);
+    },
+  });
+
+  const cancelarOfertaMutation = useMutation({
+    mutationFn: async (rotaId: string) => api.delete(`/ofertas-rotas/${rotaId}`),
+    onMutate: (rotaId) => {
+      setRotaCancelamentoEmProgresso(rotaId);
+    },
+    onSuccess: (_data, rotaId) => {
+      alert('Oferta removida e rota marcada como pendente.');
+      setEditingRoutes((prev) => ({ ...prev, [rotaId]: false }));
+      setEditSelections((prev) => {
+        const copia = { ...prev };
+        delete copia[rotaId];
+        return copia;
+      });
+      queryClient.invalidateQueries({ queryKey: ['rotas-disponiveis'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
+    },
+    onError: (error: any) => {
+      const mensagem = error.response?.data?.message || 'Erro ao cancelar ofertas da rota';
+      alert(mensagem);
+    },
+    onSettled: () => {
+      setRotaCancelamentoEmProgresso(null);
     },
   });
 
@@ -480,6 +432,111 @@ export default function RotasAlocacao() {
     setAlocacoes((prev) => prev.filter((a) => a.rotaId !== rotaId));
   };
 
+  const iniciarEdicao = (rota: Rota, motoristaAtualId?: string | null) => {
+    setEditingRoutes((prev) => ({ ...prev, [rota.id]: true }));
+    setEditSelections((prev) => ({
+      ...prev,
+      [rota.id]: motoristaAtualId ?? '',
+    }));
+    handleDesalocar(rota.id);
+  };
+
+  const cancelarEdicao = (rotaId: string) => {
+    setEditingRoutes((prev) => ({ ...prev, [rotaId]: false }));
+    setEditSelections((prev) => {
+      const copia = { ...prev };
+      delete copia[rotaId];
+      return copia;
+    });
+  };
+
+  const handleSelecaoEdicao = (rotaId: string, motoristaId: string) => {
+    setEditSelections((prev) => ({ ...prev, [rotaId]: motoristaId }));
+    if (!motoristaId) {
+      return;
+    }
+    reofertaMutation.mutate({ rotaId, motoristaId });
+  };
+
+  const handleCancelarOferta = (rota: Rota) => {
+    if (
+      !window.confirm(
+        'Deseja remover a oferta desta rota? Ela voltará para o status pendente.'
+      )
+    ) {
+      return;
+    }
+    cancelarOfertaMutation.mutate(rota.id);
+  };
+
+  const isMotoristaElegivel = (motorista: any) => {
+    if (!motorista || motorista.status !== 'ATIVO') return false;
+
+    const anoAtual = new Date().getFullYear();
+
+    if (motorista.anoFabricacaoVeiculo) {
+      const idadeVeiculo = anoAtual - Number(motorista.anoFabricacaoVeiculo);
+      if (idadeVeiculo > 15) return false;
+    }
+
+    const documento = motorista.documento || motorista.documentos?.[0];
+    if (!documento) return false;
+
+    if (!documento.numeroCNH) return false;
+
+    if (documento.validadeCNH) {
+      const validade = new Date(documento.validadeCNH);
+      if (Number.isNaN(validade.getTime()) || validade < new Date()) {
+        return false;
+      }
+    } else {
+      return false;
+    }
+
+    if (documento.proximaVerificacaoBRK) {
+      const proximaVerificacao = new Date(documento.proximaVerificacaoBRK);
+      if (Number.isNaN(proximaVerificacao.getTime()) || proximaVerificacao < new Date()) {
+        return false;
+      }
+    }
+
+    if (!documento.statusBRK) return false;
+
+    if (documento.anoLicenciamento) {
+      if (Number(documento.anoLicenciamento) < anoAtual - 1) return false;
+    } else {
+      return false;
+    }
+
+    const possuiContratoAtivo = Array.isArray(motorista.contratos)
+      ? motorista.contratos.length > 0
+      : false;
+
+    if (!possuiContratoAtivo) return false;
+
+    return true;
+  };
+
+  const motoristasElegiveisCount = useMemo(
+    () => motoristas.filter(isMotoristaElegivel).length,
+    [motoristas]
+  );
+
+  const rotasPendentes = useMemo(
+    () =>
+      rotas.filter((rota) => rota.status === 'DISPONIVEL' || rota.status === 'RECUSADA')
+        .length,
+    [rotas]
+  );
+
+  const rotasAlocadas = useMemo(
+    () =>
+      rotas.filter((rota) =>
+        ['OFERTADA', 'ACEITA', 'CONFIRMADA'].includes(rota.status)
+      ).length,
+    [rotas]
+  );
+
   // Enviar ofertas
   const handleEnviarOfertas = () => {
     if (alocacoes.length === 0) {
@@ -559,13 +616,6 @@ export default function RotasAlocacao() {
               (Mostra rotas para hoje e amanhã a partir desta data)
             </span>
           </div>
-          <button
-            onClick={gerarRelatorioDebug}
-            className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition text-sm font-medium"
-            title="Gerar relatório de debug no console"
-          >
-            📋 Gerar Relatório Debug
-          </button>
         </div>
       </div>
 
@@ -608,21 +658,14 @@ export default function RotasAlocacao() {
       )}
 
       {/* Estatísticas */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-          <div className="flex items-center gap-2 text-blue-700 mb-2">
-            <MapPin className="w-5 h-5" />
-            <span className="text-sm font-medium">Rotas Disponíveis</span>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+          <div className="flex items-center gap-2 text-yellow-700 mb-2">
+            <AlertCircle className="w-5 h-5" />
+            <span className="text-sm font-medium">Pendentes</span>
           </div>
-          <p className="text-2xl font-bold text-blue-900">{rotas.length}</p>
-        </div>
-
-        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-          <div className="flex items-center gap-2 text-green-700 mb-2">
-            <User className="w-5 h-5" />
-            <span className="text-sm font-medium">Motoristas Ativos</span>
-          </div>
-          <p className="text-2xl font-bold text-green-900">{motoristas.length}</p>
+          <p className="text-2xl font-bold text-yellow-900">{rotasPendentes}</p>
+          <p className="text-xs text-yellow-700 mt-1">Status DISPONIVEL ou RECUSADA</p>
         </div>
 
         <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
@@ -630,15 +673,17 @@ export default function RotasAlocacao() {
             <CheckCircle className="w-5 h-5" />
             <span className="text-sm font-medium">Rotas Alocadas</span>
           </div>
-          <p className="text-2xl font-bold text-purple-900">{alocacoes.length}</p>
+          <p className="text-2xl font-bold text-purple-900">{rotasAlocadas}</p>
+          <p className="text-xs text-purple-700 mt-1">Status OFERTADA, ACEITA ou CONFIRMADA</p>
         </div>
 
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-          <div className="flex items-center gap-2 text-yellow-700 mb-2">
-            <AlertCircle className="w-5 h-5" />
-            <span className="text-sm font-medium">Pendentes</span>
+        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+          <div className="flex items-center gap-2 text-green-700 mb-2">
+            <User className="w-5 h-5" />
+            <span className="text-sm font-medium">Motoristas Ativos &amp; Elegíveis</span>
           </div>
-          <p className="text-2xl font-bold text-yellow-900">{rotas.length - alocacoes.length}</p>
+          <p className="text-2xl font-bold text-green-900">{motoristasElegiveisCount}</p>
+          <p className="text-xs text-green-700 mt-1">de {motoristas.length} motoristas ativos</p>
         </div>
       </div>
 
@@ -679,6 +724,23 @@ export default function RotasAlocacao() {
                   : null;
               const cardClassName =
                 'p-6 transition ' + (rota.status === 'RECUSADA' ? 'bg-red-50/60 hover:bg-red-50' : 'hover:bg-gray-50');
+              const motoristaAtualId = motoristaRelacionado?.id ?? null;
+              const estaEditando = editingRoutes[rota.id] === true;
+              const selecaoEdicao = editSelections[rota.id] ?? (motoristaAtualId ?? '');
+              const emReoferta = rotaReofertaEmProgresso === rota.id;
+              const emCancelamento = rotaCancelamentoEmProgresso === rota.id;
+              const motoristasParaEdicao = [...motoristasElegiveis];
+              if (
+                motoristaRelacionado &&
+                motoristaAtualId &&
+                !motoristasParaEdicao.some((m: any) => m.id === motoristaAtualId)
+              ) {
+                motoristasParaEdicao.unshift({
+                  id: motoristaAtualId,
+                  nomeCompleto: motoristaRelacionado.nomeCompleto,
+                  tipoVeiculo: motoristaRelacionado.tipoVeiculo || rota.tipoVeiculo,
+                });
+              }
 
               return (
                 <div key={rota.id} className={cardClassName}>
@@ -728,9 +790,39 @@ export default function RotasAlocacao() {
                             </div>
                           </div>
                         </div>
-                        <span className={`self-start px-3 py-1 rounded-full text-xs font-semibold ${statusBadge.classes}`}>
-                          {statusBadge.label}
-                        </span>
+                        <div className="flex items-center gap-2 self-start">
+                          <span className={`px-3 py-1 rounded-full text-xs font-semibold ${statusBadge.classes}`}>
+                            {statusBadge.label}
+                          </span>
+                          {['OFERTADA', 'ACEITA', 'CONFIRMADA'].includes(rota.status) && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  estaEditando
+                                    ? cancelarEdicao(rota.id)
+                                    : iniciarEdicao(rota, motoristaAtualId)
+                                }
+                                className={`inline-flex items-center justify-center w-9 h-9 rounded-md border border-gray-300 text-gray-600 hover:bg-gray-100 transition ${
+                                  estaEditando ? 'bg-gray-100' : ''
+                                }`}
+                                disabled={emReoferta || emCancelamento}
+                                title={estaEditando ? 'Cancelar edição' : 'Editar oferta'}
+                              >
+                                <Edit2 className="w-4 h-4" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleCancelarOferta(rota)}
+                                className="inline-flex items-center justify-center w-9 h-9 rounded-md border border-red-200 text-red-600 hover:bg-red-50 transition"
+                                disabled={emCancelamento}
+                                title="Excluir oferta e voltar para pendente"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </>
+                          )}
+                        </div>
                       </div>
                     </div>
 
@@ -799,6 +891,38 @@ export default function RotasAlocacao() {
                             <p className="mt-2 text-xs text-red-600">
                               A última oferta foi recusada. Realize uma nova alocação para reenviar.
                             </p>
+                          )}
+                        </>
+                      ) : estaEditando ? (
+                        <>
+                          <div className="flex gap-2">
+                            <select
+                              value={selecaoEdicao}
+                              onChange={(e) => handleSelecaoEdicao(rota.id, e.target.value)}
+                              className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                              disabled={emReoferta}
+                            >
+                              <option value="">-- Selecione um motorista --</option>
+                              {motoristasParaEdicao.map((motorista: any) => (
+                                <option key={motorista.id} value={motorista.id}>
+                                  {motorista.nomeCompleto} - {getTipoVeiculoLabel(motorista.tipoVeiculo)}
+                                </option>
+                              ))}
+                            </select>
+                            <button
+                              type="button"
+                              onClick={() => cancelarEdicao(rota.id)}
+                              className="px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-100 transition"
+                              disabled={emReoferta}
+                            >
+                              Cancelar
+                            </button>
+                          </div>
+                          <p className="mt-2 text-xs text-gray-600">
+                            Selecione um motorista elegível para reenviar a oferta desta rota.
+                          </p>
+                          {emReoferta && (
+                            <p className="mt-2 text-xs text-blue-600">Atualizando oferta...</p>
                           )}
                         </>
                       ) : (

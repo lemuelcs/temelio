@@ -3,12 +3,13 @@ import rotaService from '../services/rota.service';
 import { TipoVeiculo, TipoRota, CicloRota, StatusRota, StatusOferta, StatusTracking } from '@prisma/client';
 import prisma from '../config/database';
 import { AppError } from '../middlewares/error.middleware';
+import logger from '../lib/logger';
 
 const obterMotoristaIdPorUsuario = async (req: Request): Promise<string> => {
   const usuarioId = req.user?.id;
 
   if (!usuarioId) {
-    console.warn('[RotaController] Requisição sem usuário autenticado.');
+    logger.warn({ path: req.path }, 'Requisição sem usuário autenticado');
     throw new AppError('Usuário não autenticado', 401);
   }
 
@@ -18,14 +19,11 @@ const obterMotoristaIdPorUsuario = async (req: Request): Promise<string> => {
   });
 
   if (!motorista) {
-    console.warn('[RotaController] Nenhum motorista vinculado ao usuário', { usuarioId });
+    logger.warn({ usuarioId }, 'Nenhum motorista vinculado ao usuário autenticado');
     throw new AppError('Motorista não encontrado para este usuário', 404);
   }
 
-  console.debug('[RotaController] Motorista associado encontrado', {
-    usuarioId,
-    motoristaId: motorista.id,
-  });
+  logger.debug({ usuarioId, motoristaId: motorista.id }, 'Motorista associado encontrado');
 
   return motorista.id;
 };
@@ -184,18 +182,18 @@ class RotaController {
 
       if (req.user?.perfil === 'MOTORISTA') {
         filtros.motoristaId = await obterMotoristaIdPorUsuario(req);
-        console.debug('[RotaController] Forçando filtro de motorista para usuário logado', {
-          usuarioId: req.user?.id,
-          motoristaId: filtros.motoristaId,
-        });
+        logger.debug(
+          {
+            usuarioId: req.user?.id,
+            motoristaId: filtros.motoristaId,
+          },
+          'Forçando filtro de motorista para usuário logado'
+        );
       }
 
       const rotas = await rotaService.listar(filtros);
 
-      console.debug('[RotaController] Rotas encontradas para filtros', {
-        filtros,
-        quantidade: rotas.length,
-      });
+      logger.debug({ filtros, quantidade: rotas.length }, 'Rotas encontradas para filtros');
 
       return res.json({
         status: 'success',
@@ -370,86 +368,68 @@ class RotaController {
         });
       }
 
-      const rota = await prisma.rota.findUnique({
-        where: { id: rotaId },
-        select: { status: true },
-      });
-
-      if (!rota) {
-        return res.status(404).json({
-          status: 'error',
-          message: 'Rota não encontrada',
-        });
-      }
-
-      const statusPermitidos = new Set<StatusRota>([
-        StatusRota.DISPONIVEL,
-        StatusRota.RECUSADA,
-        StatusRota.OFERTADA,
-      ]);
-
-      if (!statusPermitidos.has(rota.status as StatusRota)) {
-        return res.status(400).json({
-          status: 'error',
-          message: 'A rota selecionada não está disponível para oferta',
-        });
-      }
-
-      const ofertaExistente = await prisma.ofertaRota.findFirst({
-        where: {
-          rotaId,
-          motoristaId,
-          status: StatusOferta.PENDENTE,
-        },
-      });
-
-      let oferta;
-      if (ofertaExistente) {
-        oferta = await prisma.ofertaRota.update({
-          where: { id: ofertaExistente.id },
-          data: {
-            dataEnvio: new Date(),
-          },
-        });
-      } else {
-        oferta = await prisma.ofertaRota.create({
-          data: {
-            rotaId,
-            motoristaId,
-            status: StatusOferta.PENDENTE,
-            dataEnvio: new Date(),
-          },
-        });
-      }
-
-      // Criar oferta
-      // Atualizar status da rota para OFERTADA
-      await prisma.rota.update({
-        where: { id: rotaId },
-        data: {
-          status: StatusRota.OFERTADA,
-          motoristaId: null,
-          statusTracking: StatusTracking.AGUARDANDO,
-          timestampACaminho: null,
-          timestampNoLocal: null,
-          timestampRotaIniciada: null,
-          timestampRotaConcluida: null,
-          horaInicioReal: null,
-          horaFimReal: null,
-        },
-      });
-
-      // TODO: Enviar notificação Push para o motorista
+      const resultado = await rotaService.criarOuRecriarOferta(rotaId, motoristaId);
 
       return res.status(201).json({
         status: 'success',
         message: 'Oferta criada com sucesso',
-        data: oferta
+        data: resultado
       });
     } catch (error: any) {
-      return res.status(500).json({
+      const status = error instanceof AppError ? error.statusCode : 500;
+      return res.status(status).json({
         status: 'error',
         message: error.message || 'Erro ao criar oferta'
+      });
+    }
+  }
+
+  async reofertarMotorista(req: Request, res: Response) {
+    try {
+      const { rotaId } = req.params;
+      const { motoristaId } = req.body;
+
+      if (!motoristaId) {
+        return res.status(400).json({
+          status: 'error',
+          message: 'motoristaId é obrigatório'
+        });
+      }
+
+      const resultado = await rotaService.criarOuRecriarOferta(rotaId, motoristaId, {
+        forcarReoferta: true,
+      });
+
+      return res.json({
+        status: 'success',
+        message: 'Oferta atualizada com sucesso',
+        data: resultado
+      });
+    } catch (error: any) {
+      const status = error instanceof AppError ? error.statusCode : 500;
+      return res.status(status).json({
+        status: 'error',
+        message: error.message || 'Erro ao atualizar oferta'
+      });
+    }
+  }
+
+  async cancelarOfertas(req: Request, res: Response) {
+    try {
+      const { rotaId } = req.params;
+
+      const rota = await rotaService.cancelarOfertas(rotaId);
+
+      return res.json({
+        status: 'success',
+        message: 'Ofertas removidas e rota marcada como pendente',
+        data: rota
+      });
+    } catch (error: any) {
+      const status = error instanceof AppError ? error.statusCode : 500;
+      return res.status(status).json({
+        status: 'error',
+        message: error.message || 'Erro ao cancelar ofertas da rota'
       });
     }
   }
@@ -461,7 +441,7 @@ class RotaController {
   async listarOfertas(req: Request, res: Response) {
     try {
       const motoristaId = await obterMotoristaIdPorUsuario(req);
-      console.debug('[RotaController] Listando ofertas para motorista', { motoristaId });
+      logger.debug({ motoristaId }, 'Listando ofertas para motorista');
 
       const ofertas = await prisma.ofertaRota.findMany({
         where: {
@@ -489,7 +469,10 @@ class RotaController {
         }
       });
     } catch (error: any) {
-      console.error('[RotaController] Erro ao listar ofertas', error);
+      logger.error(
+        { error: error.message, stack: error.stack },
+        'Erro ao listar ofertas'
+      );
       const status = error instanceof AppError ? error.statusCode : 500;
       return res.status(status).json({
         status: 'error',
@@ -506,7 +489,7 @@ class RotaController {
     try {
       const { id } = req.params;
       const motoristaId = await obterMotoristaIdPorUsuario(req);
-      console.debug('[RotaController] Motorista aceitando oferta', { ofertaId: id, motoristaId });
+      logger.debug({ ofertaId: id, motoristaId }, 'Motorista aceitando oferta');
       const {
         adicionouAgenda = false,
         latitude,
@@ -592,7 +575,10 @@ class RotaController {
         data: ofertaAtualizada
       });
     } catch (error: any) {
-      console.error('[RotaController] Erro ao aceitar oferta', { ofertaId: req.params.id, error });
+      logger.error(
+        { ofertaId: req.params.id, error: error.message, stack: error.stack },
+        'Erro ao aceitar oferta'
+      );
       const status = error instanceof AppError ? error.statusCode : 500;
       return res.status(status).json({
         status: 'error',
@@ -609,7 +595,7 @@ class RotaController {
     try {
       const { id } = req.params;
       const motoristaId = await obterMotoristaIdPorUsuario(req);
-      console.debug('[RotaController] Motorista recusando oferta', { ofertaId: id, motoristaId });
+      logger.debug({ ofertaId: id, motoristaId }, 'Motorista recusando oferta');
       const {
         motivo,
         latitude,
@@ -687,7 +673,10 @@ class RotaController {
         data: ofertaAtualizada
       });
     } catch (error: any) {
-      console.error('[RotaController] Erro ao recusar oferta', { ofertaId: req.params.id, error });
+      logger.error(
+        { ofertaId: req.params.id, error: error.message, stack: error.stack },
+        'Erro ao recusar oferta'
+      );
       const status = error instanceof AppError ? error.statusCode : 500;
       return res.status(status).json({
         status: 'error',
@@ -704,7 +693,7 @@ class RotaController {
     try {
       const { id } = req.params;
       const motoristaId = await obterMotoristaIdPorUsuario(req);
-      console.debug('[RotaController] Atualizando tracking da rota', { rotaId: id, motoristaId });
+      logger.debug({ rotaId: id, motoristaId }, 'Atualizando tracking da rota');
       const {
         statusTracking,
         latitude,
@@ -781,7 +770,10 @@ class RotaController {
         data: rotaAtualizada
       });
     } catch (error: any) {
-      console.error('[RotaController] Erro ao atualizar tracking', { rotaId: req.params.id, error });
+      logger.error(
+        { rotaId: req.params.id, error: error.message, stack: error.stack },
+        'Erro ao atualizar tracking'
+      );
       const status = error instanceof AppError ? error.statusCode : 500;
       return res.status(status).json({
         status: 'error',

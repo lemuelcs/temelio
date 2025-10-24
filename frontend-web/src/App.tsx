@@ -1,10 +1,11 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { Toaster } from 'react-hot-toast';
 
 // Pages
 import Login from './pages/auth/Login';
+import ChangePassword from './pages/auth/ChangePassword';
 import Dashboard from './pages/dashboard/Dashboard';
 import Motoristas from './pages/motoristas/Motoristas';
 import Rotas from './pages/rotas/Rotas';
@@ -49,6 +50,7 @@ function PrivateRoute({
   allowedProfiles?: string[];
 }) {
   const { user, loading } = useAuth();
+  const location = useLocation();
 
   if (loading) {
     return (
@@ -60,6 +62,10 @@ function PrivateRoute({
 
   if (!user) {
     return <Navigate to="/login" replace />;
+  }
+
+  if (user.deveAlterarSenha && location.pathname !== '/alterar-senha') {
+    return <Navigate to="/alterar-senha" replace />;
   }
 
   if (allowedProfiles && !allowedProfiles.includes(user.perfil)) {
@@ -81,12 +87,22 @@ function AppRoutes() {
     <>
       <Routes>
         <Route path="/login" element={<Login />} />
+        <Route
+          path="/alterar-senha"
+          element={
+            <PrivateRoute>
+              <ChangePassword />
+            </PrivateRoute>
+          }
+        />
         
         {/* Redirect da raiz baseado no perfil */}
         <Route
           path="/"
           element={
-            user?.perfil === 'MOTORISTA' ? (
+            user?.deveAlterarSenha ? (
+              <Navigate to="/alterar-senha" replace />
+            ) : user?.perfil === 'MOTORISTA' ? (
               <Navigate to="/motorista/dashboard" replace />
             ) : (
               <Navigate to="/dashboard" replace />

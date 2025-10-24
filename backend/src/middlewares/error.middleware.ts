@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { Prisma } from '@prisma/client';
+import logger from '../lib/logger';
 
 // Classe customizada de erro
 export class AppError extends Error {
@@ -22,8 +23,15 @@ export const errorHandler = (
   res: Response,
   next: NextFunction
 ) => {
-  // Log do erro no console (em produção, use um logger como Winston)
-  console.error('❌ Erro:', err);
+  logger.error(
+    {
+      message: err.message,
+      stack: err.stack,
+      name: err.name,
+      path: req.path,
+    },
+    'Erro tratado pelo middleware'
+  );
 
   // Se for um AppError customizado
   if (err instanceof AppError) {

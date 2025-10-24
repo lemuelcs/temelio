@@ -1,4 +1,3 @@
-import { prisma } from '../lib/prisma';
 import { Router } from 'express';
 import authController from '../controllers/auth.controller';
 import { authenticate } from '../middlewares/auth.middleware';
@@ -25,6 +24,8 @@ router.post('/login', authController.login);
  * @access  Private
  */
 router.get('/me', authenticate, authController.getProfile);
+
+router.post('/change-password', authenticate, authController.changePassword);
 
 /**
  * @route   POST /api/auth/verify

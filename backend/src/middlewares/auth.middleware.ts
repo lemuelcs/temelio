@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { AppError } from './error.middleware';
 import { TipoPerfil } from '@prisma/client';
+import logger from '../lib/logger';
 
 // Estender o tipo Request para incluir user
 declare global {
@@ -11,6 +12,7 @@ declare global {
         id: string;
         email: string;
         perfil: TipoPerfil;
+        deveAlterarSenha: boolean;
       };
     }
   }
@@ -20,6 +22,7 @@ interface JwtPayload {
   id: string;
   email: string;
   perfil: TipoPerfil;
+  deveAlterarSenha: boolean;
 }
 
 // Middleware para verificar se o usuário está autenticado
@@ -56,9 +59,13 @@ export const authenticate = async (
     req.user = {
       id: decoded.id,
       email: decoded.email,
-      perfil: decoded.perfil
+      perfil: decoded.perfil,
+      deveAlterarSenha: decoded.deveAlterarSenha
     };
-    console.log('🔐 Usuário autenticado:', req.user); // DEBUG
+    logger.debug(
+      { userId: req.user.id, perfil: req.user.perfil, path: req.path },
+      'Usuário autenticado'
+    );
 
     next();
   } catch (error) {

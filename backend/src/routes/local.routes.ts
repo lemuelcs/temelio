@@ -1,7 +1,8 @@
-import { prisma } from '../lib/prisma';
 import { Router } from 'express';
 import localController from '../controllers/local.controller';
 import { authenticate, authorize } from '../middlewares/auth.middleware';
+import prisma from '../config/database';
+import logger from '../lib/logger';
 
 const router = Router();
 
@@ -78,7 +79,10 @@ router.delete('/:id', authenticate, async (req, res) => {
       message: 'Local excluído com sucesso' 
     });
   } catch (error: any) {
-    console.error('Erro ao excluir local:', error);
+    logger.error(
+      { error: error.message, localId: req.params.id },
+      'Erro ao excluir local'
+    );
     res.status(500).json({ 
       status: 'error',
       message: 'Erro ao excluir local',

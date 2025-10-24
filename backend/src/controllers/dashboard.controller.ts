@@ -1,8 +1,7 @@
 // backend/src/controllers/dashboard.controller.ts
 import { Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import prisma from '../config/database';
+import logger from '../lib/logger';
 
 export const getDashboardStats = async (req: Request, res: Response) => {
   try {
@@ -38,8 +37,8 @@ export const getDashboardStats = async (req: Request, res: Response) => {
       prisma.rota.count({ where: { status: 'VALIDADA' } })
     ]);
 
-    // Rotas Pendentes (DISPONIVEL + OFERTADA)
-    const rotasPendentes = rotasCriadas + rotasOfertadas;
+    // Rotas Pendentes (DISPONIVEL + RECUSADA)
+    const rotasPendentes = rotasCriadas + rotasRecusadas;
 
     // Rotas de Hoje
     const hoje = new Date();
@@ -107,7 +106,13 @@ export const getDashboardStats = async (req: Request, res: Response) => {
       }
     });
   } catch (error) {
-    console.error('Erro ao buscar estatísticas:', error);
+    logger.error(
+      {
+        message: error instanceof Error ? error.message : 'Erro desconhecido',
+        stack: error instanceof Error ? error.stack : undefined,
+      },
+      'Erro ao buscar estatísticas do dashboard'
+    );
     return res.status(500).json({
       status: 'error',
       message: 'Erro ao buscar estatísticas do dashboard',

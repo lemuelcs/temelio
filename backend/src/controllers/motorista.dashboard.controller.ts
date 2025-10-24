@@ -2,10 +2,9 @@
 // ✅ VERSÃO CORRIGIDA E COMPATÍVEL COM PRISMA
 
 import { Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
 import { startOfWeek, endOfWeek, startOfMonth, endOfMonth, addWeeks, format } from 'date-fns';
-
-const prisma = new PrismaClient();
+import prisma from '../config/database';
+import logger from '../lib/logger';
 
 // Definir tipo de nível manualmente (já que não existe enum no Prisma)
 type NivelMotorista = 'INICIANTE' | 'BRONZE' | 'PRATA' | 'OURO' | 'ELITE';
@@ -252,7 +251,13 @@ export async function getDashboardMotorista(req: Request, res: Response) {
     });
 
   } catch (error) {
-    console.error('Erro ao buscar dashboard:', error);
+    logger.error(
+      {
+        message: error instanceof Error ? error.message : 'Erro desconhecido',
+        stack: error instanceof Error ? error.stack : undefined,
+      },
+      'Erro ao buscar dashboard do motorista'
+    );
     return res.status(500).json({
       success: false,
       message: 'Erro ao carregar dados do dashboard',

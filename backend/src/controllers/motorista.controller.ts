@@ -1,9 +1,32 @@
 // backend/src/controllers/motorista.controller.ts
 import { Request, Response, NextFunction } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { parse } from 'csv-parse/sync';
+import { TipoVeiculo, PropriedadeVeiculo, StatusMotorista } from '@prisma/client';
+import prisma from '../config/database';
 import { AppError } from '../middlewares/error.middleware';
+import motoristaService from '../services/motorista.service';
+import { enviarCredenciaisMotorista } from '../services/email.service';
+import logger from '../lib/logger';
 
-const prisma = new PrismaClient();
+const SENHA_TEMPORARIA_PADRAO = process.env.MOTORISTA_SENHA_PADRAO ?? 'temelio123';
+
+const toDateOrUndefined = (value?: string | null) => {
+  if (!value) return undefined;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+};
+
+const sanitizeString = (value?: string | null) => {
+  if (value === undefined || value === null) return null;
+  const trimmed = value.toString().trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
+
+const toNumberOrNull = (value?: unknown) => {
+  if (value === undefined || value === null || value === '') return null;
+  const parsed = Number(value);
+  return Number.isNaN(parsed) ? null : parsed;
+};
 
 class MotoristaController {
   /**
@@ -94,96 +117,268 @@ class MotoristaController {
    */
   async criar(req: Request, res: Response, next: NextFunction) {
     try {
-      const dados = req.body;
+      const dados = req.body ?? {};
 
-      // Verificar duplicatas
-      if (dados.cpf) {
-        const cpfExiste = await prisma.motorista.findUnique({ where: { cpf: dados.cpf } });
-        if (cpfExiste) throw new AppError('CPF já cadastrado', 400);
-      }
+      const tipoVeiculo = (dados.tipoVeiculo || '').toString().toUpperCase() as TipoVeiculo;
+      const propriedadeVeiculo = (
+        dados.propriedadeVeiculo || 'PROPRIO'
+      )
+        .toString()
+        .toUpperCase() as PropriedadeVeiculo;
+      const statusMotorista = dados.status
+        ? (dados.status as string).toString().toUpperCase() as StatusMotorista
+        : undefined;
 
-      if (dados.email) {
-        const emailExiste = await prisma.usuario.findUnique({ where: { email: dados.email } });
-        if (emailExiste) throw new AppError('Email já cadastrado', 400);
-      }
+      const cadastroPayload = {
+        transporterId: sanitizeString(dados.transporterId),
+        nomeCompleto: dados.nomeCompleto,
+        celular: (dados.celular || '').toString().replace(/\D/g, ''),
+        cidade: dados.cidade,
+        uf: dados.uf,
+        bairro: sanitizeString(dados.bairro),
+        cep: sanitizeString(dados.cep)?.replace(/\D/g, '') ?? null,
+        logradouro: sanitizeString(dados.logradouro),
+        numero: sanitizeString(dados.numero),
+        complemento: sanitizeString(dados.complemento),
+        cpf: (dados.cpf || '').toString().replace(/\D/g, ''),
+        email: dados.email,
+        chavePix: sanitizeString(dados.chavePix),
+        tipoVeiculo,
+        propriedadeVeiculo,
+        senha: SENHA_TEMPORARIA_PADRAO,
+        obrigarAlterarSenha: true,
+        dataNascimento: toDateOrUndefined(dados.dataNascimento),
+        anoFabricacaoVeiculo: toNumberOrNull(dados.anoFabricacaoVeiculo) ?? undefined,
+        placaVeiculo: sanitizeString(dados.placaVeiculo),
+        numeroCNH: sanitizeString(dados.numeroCNH),
+        validadeCNH: toDateOrUndefined(dados.validadeCNH),
+        anoLicenciamento: toNumberOrNull(dados.anoLicenciamento) ?? undefined,
+        dataVerificacaoBRK: toDateOrUndefined(dados.dataVerificacaoBRK),
+        proximaVerificacaoBRK: toDateOrUndefined(dados.proximaVerificacaoBRK),
+        statusBRK:
+          typeof dados.statusBRK === 'boolean'
+            ? dados.statusBRK
+            : dados.statusBRK === 'true'
+              ? true
+              : dados.statusBRK === 'false'
+                ? false
+                : undefined,
+        status: statusMotorista,
+        numeroContrato: sanitizeString(dados.numeroContrato),
+        dataAssinatura: toDateOrUndefined(dados.dataAssinatura),
+        dataVigenciaInicial: toDateOrUndefined(dados.dataVigenciaInicial),
+        cnpjMEI: sanitizeString(dados.cnpjMEI)?.replace(/\D/g, '') ?? undefined,
+        razaoSocialMEI: sanitizeString(dados.razaoSocialMEI),
+      };
 
-      // Criar em transação
-      const resultado = await prisma.$transaction(async (tx) => {
-        // 1. Criar usuário
-        const usuario = await tx.usuario.create({
-          data: {
-            email: dados.email,
-            senha: dados.senha, // TODO: Hash
-            perfil: 'MOTORISTA',
-            nome: dados.nomeCompleto
-          }
-        });
+      const auditData = {
+        usuarioId: req.user?.id ?? 'sistema',
+        ip: req.ip,
+        dispositivo:
+          typeof req.headers['user-agent'] === 'string'
+            ? req.headers['user-agent']
+            : 'unknown',
+      };
 
-        // 2. Criar motorista
-        const motorista = await tx.motorista.create({
-          data: {
-            usuarioId: usuario.id,
-            transporterId: dados.transporterId,
-            nomeCompleto: dados.nomeCompleto,
-            cpf: dados.cpf,
-            dataNascimento: dados.dataNascimento ? new Date(dados.dataNascimento) : undefined,
-            celular: dados.celular,
-            email: dados.email,
-            chavePix: dados.chavePix,
-            cep: dados.cep,
-            logradouro: dados.logradouro,
-            numero: dados.numero,
-            complemento: dados.complemento,
-            bairro: dados.bairro,
-            cidade: dados.cidade,
-            uf: dados.uf,
-            tipoVeiculo: dados.tipoVeiculo,
-            placaVeiculo: dados.placaVeiculo,
-            anoFabricacaoVeiculo: dados.anoFabricacaoVeiculo,
-            propriedadeVeiculo: dados.propriedadeVeiculo || 'PROPRIO',
-            status: dados.status || 'ONBOARDING',
-            pontuacao: 0,
-            nivel: 'INICIANTE'
-          }
-        });
+      const motorista = await motoristaService.criar(cadastroPayload, auditData);
 
-        // 3. Criar documentos
-        if (dados.numeroCNH || dados.validadeCNH || dados.dataVerificacaoBRK) {
-          await tx.documentoMotorista.create({
-            data: {
-              motoristaId: motorista.id,
-              numeroCNH: dados.numeroCNH,
-              validadeCNH: dados.validadeCNH ? new Date(dados.validadeCNH) : undefined,
-              anoLicenciamento: dados.anoLicenciamento,
-              dataVerificacaoBRK: dados.dataVerificacaoBRK ? new Date(dados.dataVerificacaoBRK) : undefined,
-              proximaVerificacaoBRK: dados.proximaVerificacaoBRK ? new Date(dados.proximaVerificacaoBRK) : undefined,
-              statusBRK: dados.statusBRK || false
-            }
-          });
-        }
-
-        // 4. Criar contrato MEI
-        if (dados.cnpjMEI || dados.razaoSocialMEI || dados.numeroContrato) {
-          await tx.contratoMotorista.create({
-            data: {
-              motoristaId: motorista.id,
-              numeroContrato: dados.numeroContrato || `CONTRATO-${Date.now()}`,
-              dataAssinatura: dados.dataAssinatura ? new Date(dados.dataAssinatura) : new Date(),
-              dataVigenciaInicial: dados.dataVigenciaInicial ? new Date(dados.dataVigenciaInicial) : new Date(),
-              cnpjMEI: dados.cnpjMEI,
-              razaoSocialMEI: dados.razaoSocialMEI,
-              ativo: true
-            }
-          });
-        }
-
-        return motorista;
+      await enviarCredenciaisMotorista({
+        nome: motorista.nomeCompleto,
+        email: motorista.email,
+        senhaTemporaria: SENHA_TEMPORARIA_PADRAO,
       });
 
       res.status(201).json({
         success: true,
-        data: resultado,
-        message: 'Motorista criado com sucesso'
+        data: motorista,
+        message: 'Motorista criado com sucesso',
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async baixarModeloImportacao(_req: Request, res: Response) {
+    const cabecalho =
+      'nomeCompleto,cpf,email,celular,tipoVeiculo,propriedadeVeiculo,cidade,uf,status\n';
+    const exemplo =
+      'João da Silva,12345678901,joao.silva@example.com,11999998888,MOTOCICLETA,PROPRIO,São Paulo,SP,ATIVO\n';
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader(
+      'Content-Disposition',
+      'attachment; filename=\"modelo-importacao-motoristas.csv\"'
+    );
+    res.send(cabecalho + exemplo);
+  }
+
+  async importarCsv(req: Request, res: Response, next: NextFunction) {
+    try {
+      const arquivo = req.file;
+
+      if (!arquivo) {
+        throw new AppError('Arquivo CSV não enviado', 400);
+      }
+
+      const conteudo = arquivo.buffer.toString('utf-8');
+      const registros = parse(conteudo, {
+        columns: true,
+        skip_empty_lines: true,
+        trim: true,
+      }) as Array<Record<string, string>>;
+
+      const importados: Array<{ linha: number; nome: string; email: string }> = [];
+      const ignorados: Array<{ linha: number; motivo: string }> = [];
+
+      const auditData = {
+        usuarioId: req.user?.id ?? 'sistema',
+        ip: req.ip,
+        dispositivo:
+          typeof req.headers['user-agent'] === 'string'
+            ? req.headers['user-agent']
+            : 'unknown',
+      };
+
+      for (let index = 0; index < registros.length; index += 1) {
+        const linha = registros[index];
+        const numeroLinha = index + 2; // +1 header + index base 0
+
+        try {
+          const nomeCompleto = sanitizeString(linha.nomeCompleto);
+          const cpf = (linha.cpf || '').replace(/\D/g, '');
+          const email = sanitizeString(linha.email)?.toLowerCase();
+          const celular = (linha.celular || '').replace(/\D/g, '');
+
+          if (!nomeCompleto) {
+            ignorados.push({ linha: numeroLinha, motivo: 'Nome completo é obrigatório' });
+            continue;
+          }
+
+          if (cpf.length !== 11) {
+            ignorados.push({ linha: numeroLinha, motivo: 'CPF deve conter 11 dígitos' });
+            continue;
+          }
+
+          if (!email) {
+            ignorados.push({ linha: numeroLinha, motivo: 'Email é obrigatório' });
+            continue;
+          }
+
+          if (!linha.cidade || !linha.uf) {
+            ignorados.push({ linha: numeroLinha, motivo: 'Cidade e UF são obrigatórios' });
+            continue;
+          }
+
+          const cpfExiste = await prisma.motorista.findUnique({
+            where: { cpf },
+          });
+          const emailExiste = await prisma.usuario.findUnique({
+            where: { email },
+          });
+
+          if (cpfExiste || emailExiste) {
+            ignorados.push({
+              linha: numeroLinha,
+              motivo: 'CPF ou email já cadastrado',
+            });
+            continue;
+          }
+
+          const tipoVeiculoNormalizado = (linha.tipoVeiculo || '').toUpperCase();
+          if (!Object.values(TipoVeiculo).includes(tipoVeiculoNormalizado as TipoVeiculo)) {
+            ignorados.push({ linha: numeroLinha, motivo: 'Tipo de veículo inválido' });
+            continue;
+          }
+
+          const propriedadeVeiculoNormalizada = (
+            linha.propriedadeVeiculo || 'PROPRIO'
+          ).toUpperCase();
+          if (
+            !Object.values(PropriedadeVeiculo).includes(
+              propriedadeVeiculoNormalizada as PropriedadeVeiculo
+            )
+          ) {
+            ignorados.push({ linha: numeroLinha, motivo: 'Propriedade de veículo inválida' });
+            continue;
+          }
+
+          const statusMotorista = linha.status
+            ? (linha.status.toUpperCase() as StatusMotorista)
+            : StatusMotorista.ONBOARDING;
+          if (!Object.values(StatusMotorista).includes(statusMotorista)) {
+            ignorados.push({ linha: numeroLinha, motivo: 'Status do motorista inválido' });
+            continue;
+          }
+
+          const motorista = await motoristaService.criar(
+            {
+              transporterId: sanitizeString(linha.transporterId),
+              nomeCompleto,
+              celular,
+              cidade: linha.cidade,
+              uf: (linha.uf || '').toUpperCase(),
+              bairro: sanitizeString(linha.bairro),
+              cep: sanitizeString(linha.cep)?.replace(/\D/g, '') ?? null,
+              logradouro: sanitizeString(linha.logradouro),
+              numero: sanitizeString(linha.numero),
+              complemento: sanitizeString(linha.complemento),
+              cpf,
+              email,
+              chavePix: sanitizeString(linha.chavePix),
+              tipoVeiculo: tipoVeiculoNormalizado as TipoVeiculo,
+              propriedadeVeiculo: propriedadeVeiculoNormalizada as PropriedadeVeiculo,
+              senha: SENHA_TEMPORARIA_PADRAO,
+              obrigarAlterarSenha: true,
+              status: statusMotorista,
+            },
+            auditData
+          );
+
+          await enviarCredenciaisMotorista({
+            nome: motorista.nomeCompleto,
+            email: motorista.email,
+            senhaTemporaria: SENHA_TEMPORARIA_PADRAO,
+          });
+
+          importados.push({
+            linha: numeroLinha,
+            nome: motorista.nomeCompleto,
+            email: motorista.email,
+          });
+        } catch (erro: any) {
+          const motivo =
+            erro instanceof AppError
+              ? erro.message
+              : erro?.message ?? 'Erro desconhecido ao importar linha';
+          ignorados.push({ linha: numeroLinha, motivo });
+          logger.warn(
+            { linha: numeroLinha, motivo },
+            'Falha ao importar motorista via CSV'
+          );
+        }
+      }
+
+      logger.info(
+        {
+          total: registros.length,
+          importados: importados.length,
+          ignorados: ignorados.length,
+        },
+        'Importação de motoristas concluída'
+      );
+
+      res.json({
+        success: true,
+        data: {
+          importados,
+          ignorados,
+          resumo: {
+            totalLinhas: registros.length,
+            importados: importados.length,
+            ignorados: ignorados.length,
+          },
+        },
+        message: 'Processamento do CSV concluído',
       });
     } catch (error) {
       next(error);

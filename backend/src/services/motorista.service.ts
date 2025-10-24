@@ -2,6 +2,9 @@ import prisma from '../config/database';
 import { AppError } from '../middlewares/error.middleware';
 import { TipoVeiculo, StatusMotorista, PropriedadeVeiculo } from '@prisma/client';
 import bcrypt from 'bcrypt';
+import logger from '../lib/logger';
+
+const DEFAULT_TEMP_PASSWORD = process.env.MOTORISTA_SENHA_PADRAO ?? 'temelio123';
 
 interface CadastroMotoristaData {
   transporterId?: string | null;
@@ -19,7 +22,9 @@ interface CadastroMotoristaData {
   chavePix?: string | null;
   tipoVeiculo: TipoVeiculo;
   propriedadeVeiculo: PropriedadeVeiculo;
-  senha: string;
+  senha?: string;
+  obrigarAlterarSenha?: boolean;
+  dataNascimento?: Date;
   anoFabricacaoVeiculo?: number | null;
   placaVeiculo?: string | null;
   numeroCNH?: string | null;
@@ -92,6 +97,8 @@ class MotoristaService {
       tipoVeiculo,
       propriedadeVeiculo,
       senha,
+      obrigarAlterarSenha = true,
+      dataNascimento,
       anoFabricacaoVeiculo,
       placaVeiculo,
       numeroCNH,
@@ -148,7 +155,8 @@ class MotoristaService {
     }
 
     // Hash da senha
-    const senhaHash = await bcrypt.hash(senha, 10);
+    const senhaEmUso = senha ?? DEFAULT_TEMP_PASSWORD;
+    const senhaHash = await bcrypt.hash(senhaEmUso, 10);
 
     // Criar motorista com relacionamentos
     const motorista = await prisma.motorista.create({
@@ -165,6 +173,7 @@ class MotoristaService {
         bairro: bairro || null,
         cpf,
         email,
+        dataNascimento: dataNascimento ?? null,
         chavePix: chavePix || null,
         tipoVeiculo,
         propriedadeVeiculo,
@@ -179,7 +188,8 @@ class MotoristaService {
             senha: senhaHash,
             nome: nomeCompleto,
             perfil: 'MOTORISTA',
-            ativo: status === StatusMotorista.ATIVO
+            ativo: status === StatusMotorista.ATIVO,
+            deveAlterarSenha: obrigarAlterarSenha
           }
         },
 
@@ -371,7 +381,10 @@ class MotoristaService {
     if (data.status !== undefined) dadosParaAtualizar.status = data.status;
     if (data.transporterId !== undefined) dadosParaAtualizar.transporterId = data.transporterId;
 
-    console.log('🔍 Dados para atualizar:', JSON.stringify(dadosParaAtualizar, null, 2)); // Debug - ver qual campo está causando o problema.
+    logger.debug(
+      { motoristaId: id, camposAtualizados: Object.keys(dadosParaAtualizar) },
+      'Atualizando motorista'
+    );
 
     const motoristaAtualizado = await prisma.motorista.update({
       where: { id },

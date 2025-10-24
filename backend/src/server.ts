@@ -1,9 +1,14 @@
 import app from './app';
+import logger from './lib/logger';
 
 const PORT = process.env.PORT || 3001;
 
 app.listen(PORT, () => {
-  console.log(`🚀 Servidor rodando na porta ${PORT}`);
-  console.log(`📍 http://localhost:${PORT}`);
-  console.log(`🔧 Ambiente: ${process.env.NODE_ENV || 'development'}`);
+  logger.info(
+    {
+      port: PORT,
+      environment: process.env.NODE_ENV || 'development',
+    },
+    'Servidor iniciado'
+  );
 });

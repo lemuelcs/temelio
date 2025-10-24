@@ -1,4 +1,3 @@
-import { prisma } from '../lib/prisma';
 import { Router } from 'express';
 import alertaController from '../controllers/alerta.controller';
 import { authenticate, authorize } from '../middlewares/auth.middleware';

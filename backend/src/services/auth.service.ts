@@ -22,6 +22,7 @@ interface AuthResponse {
     email: string;
     nome: string;
     perfil: TipoPerfil;
+    deveAlterarSenha: boolean;
   };
   token: string;
 }
@@ -50,18 +51,20 @@ class AuthService {
         senha: senhaHash,
         nome,
         perfil,
-        ativo: true
+        ativo: true,
+        deveAlterarSenha: false
       },
       select: {
         id: true,
         email: true,
         nome: true,
-        perfil: true
+        perfil: true,
+        deveAlterarSenha: true
       }
     });
 
     // Gerar token JWT
-    const token = this.generateToken(usuario.id, usuario.email, usuario.perfil);
+    const token = this.generateToken(usuario.id, usuario.email, usuario.perfil, usuario.deveAlterarSenha);
 
     return {
       user: usuario,
@@ -95,21 +98,22 @@ class AuthService {
     }
 
     // Gerar token JWT
-    const token = this.generateToken(usuario.id, usuario.email, usuario.perfil);
+    const token = this.generateToken(usuario.id, usuario.email, usuario.perfil, usuario.deveAlterarSenha);
 
     return {
       user: {
         id: usuario.id,
         email: usuario.email,
         nome: usuario.nome,
-        perfil: usuario.perfil
+        perfil: usuario.perfil,
+        deveAlterarSenha: usuario.deveAlterarSenha
       },
       token
     };
   }
 
   // Gerar token JWT
-  private generateToken(id: string, email: string, perfil: TipoPerfil): string {
+  private generateToken(id: string, email: string, perfil: TipoPerfil, deveAlterarSenha: boolean): string {
     const secret = process.env.JWT_SECRET;
 
    if (!secret) {
@@ -118,7 +122,7 @@ class AuthService {
 
    // Token expira em 7 dias
    return jwt.sign(
-     { id, email, perfil },
+     { id, email, perfil, deveAlterarSenha },
      secret,
      { expiresIn: '7d' }
    );
@@ -137,6 +141,7 @@ class AuthService {
         id: string;
         email: string;
         perfil: TipoPerfil;
+        deveAlterarSenha: boolean;
       };
 
       // Buscar usuário atualizado
@@ -147,7 +152,8 @@ class AuthService {
           email: true,
           nome: true,
           perfil: true,
-          ativo: true
+          ativo: true,
+          deveAlterarSenha: true
         }
       });
 
@@ -165,6 +171,50 @@ class AuthService {
       }
       throw error;
     }
+  }
+
+  async getUserProfile(id: string) {
+    const usuario = await prisma.usuario.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        email: true,
+        nome: true,
+        perfil: true,
+        ativo: true,
+        deveAlterarSenha: true,
+      },
+    });
+
+    if (!usuario) {
+      throw new AppError('Usuário não encontrado', 404);
+    }
+
+    return usuario;
+  }
+
+  async changePassword(id: string, senhaAtual: string, novaSenha: string) {
+    const usuario = await prisma.usuario.findUnique({ where: { id } });
+
+    if (!usuario) {
+      throw new AppError('Usuário não encontrado', 404);
+    }
+
+    const senhaValida = await bcrypt.compare(senhaAtual, usuario.senha);
+
+    if (!senhaValida) {
+      throw new AppError('Senha atual incorreta', 400);
+    }
+
+    const novaSenhaHash = await bcrypt.hash(novaSenha, 10);
+
+    await prisma.usuario.update({
+      where: { id },
+      data: {
+        senha: novaSenhaHash,
+        deveAlterarSenha: false,
+      },
+    });
   }
 }
 

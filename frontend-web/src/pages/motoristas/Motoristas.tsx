@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, Search, Edit, CheckCircle, XCircle, User, RefreshCw, MessageCircle } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -128,6 +128,7 @@ export default function Motoristas() {
   const [selectedMotoristaStatus, setSelectedMotoristaStatus] = useState<string>('');
   const [alertMotoristaIds, setAlertMotoristaIds] = useState<string[]>([]);
   const [alertFilterLabel, setAlertFilterLabel] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   
   const queryClient = useQueryClient();
   const location = useLocation();
@@ -148,10 +149,31 @@ export default function Motoristas() {
           const dateB = new Date(b.updatedAt || b.createdAt || 0);
           return dateB.getTime() - dateA.getTime();
         });
-      } catch (error) {
-        console.error('Erro ao buscar motoristas:', error);
+      } catch (_error) {
         return [];
       }
+    },
+  });
+
+  const importarMotoristasMutation = useMutation({
+    mutationFn: async (formData: FormData) => {
+      const response = await api.post('/gestao/motoristas/import', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+      return response.data;
+    },
+    onSuccess: (data) => {
+      const resumo = data?.data?.resumo;
+      const importados = resumo?.importados ?? 0;
+      const ignorados = resumo?.ignorados ?? 0;
+      alert(`Importação concluída: ${importados} importado(s), ${ignorados} ignorado(s).`);
+      queryClient.invalidateQueries({ queryKey: ['motoristas'] });
+    },
+    onError: (error: any) => {
+      const mensagem = error?.response?.data?.message || 'Erro ao importar motoristas';
+      alert(mensagem);
     },
   });
 
@@ -225,6 +247,37 @@ export default function Motoristas() {
     setShowStatusModal(true);
   };
 
+  const handleDownloadTemplate = async () => {
+    try {
+      const response = await api.get('/gestao/motoristas/import/template', {
+        responseType: 'blob',
+      });
+
+      const blob = new Blob([response.data], { type: 'text/csv;charset=utf-8;' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'modelo-importacao-motoristas.csv';
+      link.click();
+      window.URL.revokeObjectURL(url);
+    } catch (error: any) {
+      const mensagem = error?.response?.data?.message || 'Erro ao baixar modelo CSV';
+      alert(mensagem);
+    }
+  };
+
+  const handleArquivoImportacao = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const arquivo = event.target.files?.[0];
+    if (!arquivo) return;
+
+    const formData = new FormData();
+    formData.append('file', arquivo);
+    importarMotoristasMutation.mutate(formData);
+    event.target.value = '';
+  };
+
+  const importandoCsv = importarMotoristasMutation.isPending;
+
   const getTipoVeiculoLabel = (tipo: string) => {
     const labels: Record<string, string> = {
       MOTOCICLETA: 'Moto',
@@ -243,16 +296,40 @@ export default function Motoristas() {
           <h1 className="text-2xl font-bold text-gray-900">Motoristas</h1>
           <p className="text-gray-600 mt-1">Gerencie os motoristas parceiros</p>
         </div>
-        <button
-          onClick={() => {
-            setEditingId(null);
-            setShowModal(true);
-          }}
-          className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition"
-        >
-          <Plus className="w-5 h-5" />
-          Novo Motorista
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleDownloadTemplate}
+            className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100 transition"
+          >
+            Baixar modelo CSV
+          </button>
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="px-4 py-2 border border-blue-300 text-blue-600 rounded-lg text-sm font-medium hover:bg-blue-50 transition disabled:opacity-60 disabled:cursor-not-allowed"
+            disabled={importandoCsv}
+          >
+            {importandoCsv ? 'Importando...' : 'Importar CSV'}
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv,text/csv"
+            className="hidden"
+            onChange={handleArquivoImportacao}
+          />
+          <button
+            onClick={() => {
+              setEditingId(null);
+              setShowModal(true);
+            }}
+            className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition"
+          >
+            <Plus className="w-5 h-5" />
+            Novo Motorista
+          </button>
+        </div>
       </div>
 
       {/* Filtros */}
@@ -678,8 +755,7 @@ function MotoristaModal({ motoristaId, onClose }: { motoristaId: string | null; 
       } else {
         alert('CEP não encontrado');
       }
-    } catch (error) {
-      console.error('Erro ao buscar CEP:', error);
+    } catch (_error) {
       alert('Erro ao buscar CEP');
     } finally {
       setLoadingCEP(false);
@@ -752,7 +828,6 @@ function MotoristaModal({ motoristaId, onClose }: { motoristaId: string | null; 
     onError: (error: any) => {
       const mensagem = error.response?.data?.message || 'Erro ao salvar motorista';
       alert(mensagem);
-      console.error('Erro:', error.response?.data);
     },
   });
 

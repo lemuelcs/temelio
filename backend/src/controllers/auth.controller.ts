@@ -66,11 +66,40 @@ class AuthController {
         throw new AppError('Usuário não autenticado', 401);
       }
 
+      const usuario = await authService.getUserProfile(req.user.id);
+
       res.json({
         status: 'success',
         data: {
-          user: req.user
+          user: usuario
         }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async changePassword(req: Request, res: Response, next: NextFunction) {
+    try {
+      if (!req.user) {
+        throw new AppError('Usuário não autenticado', 401);
+      }
+
+      const { senhaAtual, novaSenha } = req.body;
+
+      if (!senhaAtual || !novaSenha) {
+        throw new AppError('Senha atual e nova senha são obrigatórias', 400);
+      }
+
+      if (novaSenha.length < 6) {
+        throw new AppError('A nova senha deve ter no mínimo 6 caracteres', 400);
+      }
+
+      await authService.changePassword(req.user.id, senhaAtual, novaSenha);
+
+      res.json({
+        status: 'success',
+        message: 'Senha atualizada com sucesso'
       });
     } catch (error) {
       next(error);

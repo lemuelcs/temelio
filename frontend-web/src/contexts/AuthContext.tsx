@@ -6,14 +6,16 @@ interface User {
   email: string;
   nome: string;
   perfil: 'DESPACHANTE_PLANEJADOR' | 'MOTORISTA' | 'ADMINISTRADOR';
+  deveAlterarSenha: boolean;
 }
 
 interface AuthContextData {
   user: User | null;
   token: string | null;
   loading: boolean;
-  login: (email: string, senha: string) => Promise<void>;
+  login: (email: string, senha: string) => Promise<User>;
   logout: () => void;
+  refreshProfile: () => Promise<User | null>;
   isAuthenticated: boolean;
 }
 
@@ -24,17 +26,48 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    // Verificar se tem token salvo
-    const savedToken = localStorage.getItem('token');
-    const savedUser = localStorage.getItem('user');
-
-    if (savedToken && savedUser) {
-      setToken(savedToken);
-      setUser(JSON.parse(savedUser));
+  const refreshProfile = async (): Promise<User | null> => {
+    try {
+      const response = await api.get('/auth/me');
+      const userData = response.data?.data?.user ?? response.data?.data ?? null;
+      if (userData) {
+        setUser(userData);
+        localStorage.setItem('user', JSON.stringify(userData));
+      }
+      return userData;
+    } catch (error: any) {
+      throw new Error(error?.response?.data?.message || 'Erro ao carregar perfil do usuário');
     }
-    
-    setLoading(false);
+  };
+
+  useEffect(() => {
+    const initialize = async () => {
+      const savedToken = localStorage.getItem('token');
+      const savedUser = localStorage.getItem('user');
+
+      if (!savedToken) {
+        setLoading(false);
+        return;
+      }
+
+      setToken(savedToken);
+      if (savedUser) {
+        setUser(JSON.parse(savedUser));
+      }
+
+      try {
+        await refreshProfile();
+      } catch {
+        setUser(null);
+        setToken(null);
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    initialize();
   }, []);
 
   const login = async (email: string, senha: string) => {
@@ -42,12 +75,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const response = await api.post('/auth/login', { email, senha });
       
       const { user: userData, token: userToken } = response.data.data;
-      
+       
       setUser(userData);
       setToken(userToken);
-      
+       
       localStorage.setItem('token', userToken);
       localStorage.setItem('user', JSON.stringify(userData));
+      return userData;
     } catch (error: any) {
       throw new Error(error.response?.data?.message || 'Erro ao fazer login');
     }
@@ -68,6 +102,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         loading,
         login,
         logout,
+        refreshProfile,
         isAuthenticated: !!user && !!token,
       }}
     >
