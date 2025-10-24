@@ -407,6 +407,52 @@ class DisponibilidadeController {
       next(error);
     }
   }
+
+  /**
+   * GESTÃO: Listar disponibilidades no intervalo informado
+   */
+  async listarIntervalo(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { dataInicio, dataFim, disponivel } = req.query;
+
+      if (!dataInicio || !dataFim) {
+        return res.status(400).json({
+          success: false,
+          message: 'Informe dataInicio e dataFim para consultar disponibilidades'
+        });
+      }
+
+      const inicio = new Date(`${dataInicio as string}T00:00:00Z`);
+      const fim = new Date(`${dataFim as string}T23:59:59Z`);
+
+      if (Number.isNaN(inicio.getTime()) || Number.isNaN(fim.getTime())) {
+        return res.status(400).json({
+          success: false,
+          message: 'Datas inválidas fornecidas'
+        });
+      }
+
+      const apenasDisponiveis = disponivel === undefined ? true : disponivel === 'true';
+
+      const disponibilidades = await disponibilidadeService.buscarIntervalo(
+        inicio,
+        fim,
+        apenasDisponiveis
+      );
+
+      res.json({
+        success: true,
+        data: disponibilidades,
+        meta: {
+          dataInicio: inicio,
+          dataFim: fim,
+          apenasDisponiveis
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 export default new DisponibilidadeController();

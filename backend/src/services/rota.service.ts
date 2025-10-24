@@ -43,17 +43,32 @@ class RotaService {
       bonusPorHora,
       bonusFixo,
       kmProjetado,
+      latitudeOrigem,
+      longitudeOrigem,
+      qtdePacotes,
+      qtdeLocais,
+      qtdeParadas,
+      codigoRota,
       criadoPor
     } = data;
 
     // Validar data (não pode ser no passado)
     const hoje = new Date();
-    hoje.setHours(0, 0, 0, 0);
+    hoje.setUTCHours(0, 0, 0, 0);
     const dataRotaNormalizada = new Date(dataRota);
-    dataRotaNormalizada.setHours(0, 0, 0, 0);
+    dataRotaNormalizada.setUTCHours(0, 0, 0, 0);
 
     if (dataRotaNormalizada < hoje) {
       throw new AppError('Data da rota não pode ser anterior à data atual', 400);
+    }
+
+    if (tipoRota === 'RESGATE') {
+      const latitudeInformada = latitudeOrigem !== undefined && latitudeOrigem !== null;
+      const longitudeInformada = longitudeOrigem !== undefined && longitudeOrigem !== null;
+
+      if (!latitudeInformada || !longitudeInformada) {
+        throw new AppError('Informe a latitude e a longitude da origem para rotas de resgate', 400);
+      }
     }
 
     // Validar tamanho da rota
@@ -124,6 +139,8 @@ class RotaService {
       throw new AppError('Tabela de preços não encontrada', 404);
     }
 
+    const cicloNormalizado = tipoRota === 'RESGATE' ? 'SEM_CICLO' : cicloRota;
+
     // Calcular valores
     const valorHora = tabelaPreco.valorHora;
     const valorBase = Number(valorHora) * tamanhoHoras;
@@ -140,7 +157,7 @@ class RotaService {
         horaFim: horaFim || null,
         tipoVeiculo,
         tipoRota,
-        cicloRota,
+        cicloRota: cicloNormalizado,
         tamanhoHoras,
         veiculoTransportadora,
         localId,
@@ -149,7 +166,13 @@ class RotaService {
         bonusFixo: bonusFixo || 0,
         valorProjetado: Number(valorProjetado),
         valorTotalRota: Number(valorTotalRota),
-        kmProjetado: kmProjetado || 50,
+        kmProjetado: kmProjetado !== undefined && kmProjetado !== null ? Number(kmProjetado) : 50,
+        latitudeOrigem: latitudeOrigem !== undefined ? Number(latitudeOrigem) : null,
+        longitudeOrigem: longitudeOrigem !== undefined ? Number(longitudeOrigem) : null,
+        qtdePacotes: qtdePacotes !== undefined && qtdePacotes !== null ? Number(qtdePacotes) : null,
+        qtdeLocais: qtdeLocais !== undefined && qtdeLocais !== null ? Number(qtdeLocais) : null,
+        qtdeParadas: qtdeParadas !== undefined && qtdeParadas !== null ? Number(qtdeParadas) : null,
+        codigoRota: codigoRota ? String(codigoRota) : null,
         status: StatusRota.DISPONIVEL,
         criadoPor
       },
@@ -506,12 +529,59 @@ class RotaService {
       }
     }
 
+    const dadosAtualizacao: any = { ...data };
+
+    if (dadosAtualizacao.dataRota) {
+      dadosAtualizacao.dataRota = new Date(dadosAtualizacao.dataRota);
+    }
+
+    if (dadosAtualizacao.tipoRota === 'RESGATE') {
+      dadosAtualizacao.cicloRota = 'SEM_CICLO';
+    }
+
+    if (dadosAtualizacao.latitudeOrigem !== undefined) {
+      dadosAtualizacao.latitudeOrigem = dadosAtualizacao.latitudeOrigem !== null
+        ? Number(dadosAtualizacao.latitudeOrigem)
+        : null;
+    }
+
+    if (dadosAtualizacao.longitudeOrigem !== undefined) {
+      dadosAtualizacao.longitudeOrigem = dadosAtualizacao.longitudeOrigem !== null
+        ? Number(dadosAtualizacao.longitudeOrigem)
+        : null;
+    }
+
+    if (dadosAtualizacao.qtdePacotes !== undefined) {
+      dadosAtualizacao.qtdePacotes = dadosAtualizacao.qtdePacotes !== null
+        ? Number(dadosAtualizacao.qtdePacotes)
+        : null;
+    }
+
+    if (dadosAtualizacao.qtdeLocais !== undefined) {
+      dadosAtualizacao.qtdeLocais = dadosAtualizacao.qtdeLocais !== null
+        ? Number(dadosAtualizacao.qtdeLocais)
+        : null;
+    }
+
+    if (dadosAtualizacao.qtdeParadas !== undefined) {
+      dadosAtualizacao.qtdeParadas = dadosAtualizacao.qtdeParadas !== null
+        ? Number(dadosAtualizacao.qtdeParadas)
+        : null;
+    }
+
+    if (dadosAtualizacao.kmProjetado !== undefined) {
+      dadosAtualizacao.kmProjetado = dadosAtualizacao.kmProjetado !== null
+        ? Number(dadosAtualizacao.kmProjetado)
+        : null;
+    }
+
+    if (dadosAtualizacao.codigoRota !== undefined && dadosAtualizacao.codigoRota !== null) {
+      dadosAtualizacao.codigoRota = String(dadosAtualizacao.codigoRota);
+    }
+
     const rotaAtualizada = await prisma.rota.update({
       where: { id },
-      data: {
-        ...data,
-        dataRota: data.dataRota ? new Date(data.dataRota) : undefined
-      },
+      data: dadosAtualizacao,
       include: {
         local: true
       }

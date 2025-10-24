@@ -38,6 +38,42 @@ interface Alocacao {
   motoristaId: string;
 }
 
+const toLocalDateInput = (date: Date) => {
+  const offsetInMs = date.getTimezoneOffset() * 60000;
+  return new Date(date.getTime() - offsetInMs).toISOString().split('T')[0];
+};
+
+const addDaysToDateString = (dateStr: string, days: number) => {
+  const base = new Date(`${dateStr}T00:00:00`);
+  base.setDate(base.getDate() + days);
+  return toLocalDateInput(base);
+};
+
+const formatDatePtBr = (value: string) => {
+  if (!value) return '-';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return '-';
+  return new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(parsed);
+};
+
+const normalizarCiclo = (valor: string | null | undefined) =>
+  (valor || '').toString().replace(/_/g, '').toUpperCase();
+
+const toHourMinute = (value?: string | null) => {
+  if (!value) return '';
+
+  const parsed = new Date(value);
+  if (!Number.isNaN(parsed.getTime())) {
+    return parsed.toISOString().substring(11, 16);
+  }
+
+  if (typeof value === 'string' && value.includes(':')) {
+    return value.substring(0, 5);
+  }
+
+  return '';
+};
+
 export default function RotasAlocacao() {
   const queryClient = useQueryClient();
   const [alocacoes, setAlocacoes] = useState<Alocacao[]>([]);
@@ -46,7 +82,7 @@ export default function RotasAlocacao() {
   // Definir filtro de data padrão (hoje e amanhã)
   useEffect(() => {
     const hoje = new Date();
-    setFilterData(hoje.toISOString().split('T')[0]);
+    setFilterData(toLocalDateInput(hoje));
   }, []);
 
   // Buscar rotas disponíveis
@@ -54,14 +90,15 @@ export default function RotasAlocacao() {
     queryKey: ['rotas-disponiveis', filterData],
     queryFn: async () => {
       try {
-        const hoje = new Date(filterData);
-        const amanha = new Date(filterData);
-        amanha.setDate(amanha.getDate() + 1);
+        if (!filterData) return [];
+
+        const dataInicio = filterData;
+        const dataFim = addDaysToDateString(filterData, 1);
 
         const params = new URLSearchParams({
           status: 'DISPONIVEL',
-          dataInicio: hoje.toISOString().split('T')[0],
-          dataFim: amanha.toISOString().split('T')[0],
+          dataInicio,
+          dataFim,
         });
 
         const response = await api.get(`/rotas?${params.toString()}`);
@@ -97,17 +134,16 @@ export default function RotasAlocacao() {
     queryFn: async () => {
       if (!filterData) return [];
       try {
-        const hoje = new Date(filterData);
-        const amanha = new Date(filterData);
-        amanha.setDate(amanha.getDate() + 1);
+        const dataInicio = filterData;
+        const dataFim = addDaysToDateString(filterData, 1);
 
         const params = new URLSearchParams({
-          dataInicio: hoje.toISOString().split('T')[0],
-          dataFim: amanha.toISOString().split('T')[0],
+          dataInicio,
+          dataFim,
         });
 
-        const response = await api.get(`/disponibilidades?${params.toString()}`);
-        const dados = response.data?.data?.disponibilidades || response.data?.disponibilidades || response.data;
+        const response = await api.get(`/gestao/disponibilidades/intervalo?${params.toString()}`);
+        const dados = response.data?.data || response.data;
         return Array.isArray(dados) ? dados : [];
       } catch (error) {
         console.error('Erro ao buscar disponibilidades:', error);
@@ -145,28 +181,34 @@ export default function RotasAlocacao() {
   // Verificar se motorista tem disponibilidade para a rota
   const motoristaTemDisponibilidade = (motoristaId: string, dataRota: string, ciclo: string): boolean => {
     const dataRotaObj = new Date(dataRota);
+    if (Number.isNaN(dataRotaObj.getTime())) {
+      return false;
+    }
+
     const dataRotaStr = dataRotaObj.toISOString().split('T')[0];
+    const cicloNormalizado = normalizarCiclo(ciclo);
 
-    // Mapear ciclo para turno
-    const turnoMap: Record<string, string> = {
-      CICLO_1: 'MATUTINO',
-      CICLO_2: 'VESPERTINO',
-      SAME_DAY: 'NOTURNO',
-      SEM_CICLO: 'MATUTINO', // Padrão
-    };
+    return disponibilidades.some((d: any) => {
+      if (d.motoristaId !== motoristaId) {
+        return false;
+      }
 
-    const turno = turnoMap[ciclo] || 'MATUTINO';
+      const dataDisponibilidade = new Date(d.data);
+      if (Number.isNaN(dataDisponibilidade.getTime())) {
+        return false;
+      }
 
-    // Buscar disponibilidade do motorista
-    const disponibilidade = disponibilidades.find(
-      (d: any) =>
-        d.motoristaId === motoristaId &&
-        new Date(d.data).toISOString().split('T')[0] === dataRotaStr &&
-        d.turno === turno &&
-        d.disponivel === true
-    );
+      const dataDisponibilidadeStr = dataDisponibilidade.toISOString().split('T')[0];
+      if (dataDisponibilidadeStr !== dataRotaStr) {
+        return false;
+      }
 
-    return !!disponibilidade;
+      if (cicloNormalizado === 'SEMCICLO') {
+        return d.disponivel !== false;
+      }
+
+      return normalizarCiclo(d.ciclo) === cicloNormalizado && d.disponivel !== false;
+    });
   };
 
   // Filtrar motoristas elegíveis para uma rota
@@ -236,6 +278,7 @@ export default function RotasAlocacao() {
       CICLO_1: 'Ciclo 1 (Manhã)',
       CICLO_2: 'Ciclo 2 (Tarde)',
       SAME_DAY: 'Same Day (Noite)',
+      SAMEDAY: 'Same Day (Noite)',
       SEM_CICLO: 'Sem Ciclo',
     };
     return labels[ciclo] || ciclo;
@@ -248,14 +291,9 @@ export default function RotasAlocacao() {
     }).format(value);
   };
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('pt-BR');
-  };
+  const formatDate = (dateString: string) => formatDatePtBr(dateString);
 
-  const formatTime = (timeString: string) => {
-    if (!timeString) return '';
-    return timeString.substring(0, 5);
-  };
+  const formatTime = (timeString: string) => toHourMinute(timeString);
 
   const isLoading = loadingRotas || loadingMotoristas;
 

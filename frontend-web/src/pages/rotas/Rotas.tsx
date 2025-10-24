@@ -1,7 +1,24 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, Search, Edit, Trash2, MapPin, Clock, DollarSign, Calendar } from 'lucide-react';
+import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+import markerIcon from 'leaflet/dist/images/marker-icon.png';
+import markerShadow from 'leaflet/dist/images/marker-shadow.png';
 import api from '../../services/api';
+
+// Ajuste padrão para ícones do Leaflet no Vite/React
+const defaultLeafletIcon = L.icon({
+  iconUrl: markerIcon,
+  shadowUrl: markerShadow,
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+});
+
+if (typeof window !== 'undefined') {
+  L.Marker.prototype.options.icon = defaultLeafletIcon;
+}
 
 // Valores padrão (fallback se não conseguir buscar do BD)
 const VALORES_PADRAO = {
@@ -22,6 +39,35 @@ const TIPO_VEICULO_TO_SERVICO: Record<string, string[]> = {
 };
 
 const TIPOS_SERVICO_PERMITIDOS = new Set(['BIKE', 'PASSENGER', 'CARGO_VAN', 'SMALL_VAN', 'LARGE_VAN']);
+
+const DEFAULT_MAP_CENTER: [number, number] = [-23.55052, -46.633308];
+
+const toLocalDateInput = (date: Date) => {
+  const offsetInMs = date.getTimezoneOffset() * 60000;
+  return new Date(date.getTime() - offsetInMs).toISOString().split('T')[0];
+};
+
+const formatDatePtBr = (dateString: string) => {
+  if (!dateString) return '-';
+  const parsed = new Date(dateString);
+  if (Number.isNaN(parsed.getTime())) return '-';
+  return new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(parsed);
+};
+
+const parseNumberOrNull = (value: string | number | null | undefined) => {
+  if (value === null || value === undefined) return null;
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (trimmed === '') {
+      return null;
+    }
+    const numeric = Number(trimmed);
+    return Number.isNaN(numeric) ? null : numeric;
+  }
+
+  return Number.isNaN(value) ? null : Number(value);
+};
 
 interface Rota {
   id: string;
@@ -44,12 +90,39 @@ interface Rota {
   motorista?: {
     nomeCompleto: string;
   };
+  qtdeParadas?: number | null;
+  qtdeLocais?: number | null;
+  qtdePacotes?: number | null;
+  latitudeOrigem?: number | null;
+  longitudeOrigem?: number | null;
 }
 
 type TabelaPrecosProcessada = {
   precos: Record<string, Record<string, { valorHora: number; tabelaId: string | null }>>;
   valorKm: number;
 };
+
+interface RotaFormData {
+  dataRota: string;
+  horaInicio: string;
+  horaFim: string;
+  tipoVeiculo: string;
+  tipoRota: string;
+  cicloRota: string;
+  tamanhoHoras: number;
+  veiculoTransportadora: boolean;
+  bonusPorHora: number;
+  bonusFixo: number;
+  kmProjetado: number;
+  localId: string;
+  latitudeOrigem: string;
+  longitudeOrigem: string;
+  resgateRotaId: string;
+  codigoRota: string;
+  qtdeParadas: string;
+  qtdeLocais: string;
+  qtdePacotes: string;
+}
 
 const toHourMinute = (value?: string | null) => {
   if (!value) return '';
@@ -66,6 +139,47 @@ const toHourMinute = (value?: string | null) => {
   return '';
 };
 
+function ResgateLocationSelector({
+  position,
+  onSelect,
+}: {
+  position: [number, number] | null;
+  onSelect: (lat: number, lng: number) => void;
+}) {
+  const LocationMarker = () => {
+    const map = useMapEvents({
+      click(event) {
+        onSelect(event.latlng.lat, event.latlng.lng);
+      },
+    });
+
+    useEffect(() => {
+      if (position) {
+        map.setView(position);
+      }
+    }, [position, map]);
+
+    return position ? <Marker position={position} /> : null;
+  };
+
+  const center = position ?? DEFAULT_MAP_CENTER;
+
+  return (
+    <MapContainer
+      center={center}
+      zoom={13}
+      style={{ height: '100%', width: '100%' }}
+      scrollWheelZoom
+    >
+      <TileLayer
+        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+      />
+      <LocationMarker />
+    </MapContainer>
+  );
+}
+
 export default function Rotas() {
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -81,11 +195,11 @@ export default function Rotas() {
   // Definir filtro de data padrão (hoje e amanhã)
   useEffect(() => {
     const hoje = new Date();
-    const amanha = new Date();
-    amanha.setDate(amanha.getDate() + 1);
+    const amanha = new Date(hoje);
+    amanha.setDate(hoje.getDate() + 1);
 
-    setFilterDataInicio(hoje.toISOString().split('T')[0]);
-    setFilterDataFim(amanha.toISOString().split('T')[0]);
+    setFilterDataInicio(toLocalDateInput(hoje));
+    setFilterDataFim(toLocalDateInput(amanha));
   }, []);
 
   // Buscar tabela de preços da estação DBS5
@@ -246,6 +360,7 @@ export default function Rotas() {
       CICLO_1: 'Ciclo 1 (Manhã)',
       CICLO_2: 'Ciclo 2 (Tarde)',
       SAME_DAY: 'Same Day (Noite)',
+      SAMEDAY: 'Same Day (Noite)',
       SEM_CICLO: 'Sem Ciclo',
     };
     return labels[ciclo] || ciclo;
@@ -258,9 +373,7 @@ export default function Rotas() {
     }).format(value);
   };
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('pt-BR');
-  };
+  const formatDate = (dateString: string) => formatDatePtBr(dateString);
 
   const formatTime = (timeString: string) => toHourMinute(timeString);
 
@@ -456,6 +569,11 @@ export default function Rotas() {
                       {((rota.bonusPorHora || 0) > 0 || (rota.bonusFixo || 0) > 0) && (
                         <div className="text-xs text-blue-600">+ bônus</div>
                       )}
+                      {typeof rota.qtdeParadas === 'number' && (
+                        <div className="text-xs text-gray-500 mt-1">
+                          Paradas: {rota.qtdeParadas}
+                        </div>
+                      )}
                     </td>
                     <td className="px-6 py-4">
                       <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusBadge(rota.status)}`}>
@@ -518,6 +636,14 @@ function RotaModal({
 }) {
   const queryClient = useQueryClient();
   const isEditing = !!rotaId;
+  const resgatePosition = useMemo<[number, number] | null>(() => {
+    const lat = parseNumberOrNull(formData.latitudeOrigem);
+    const lng = parseNumberOrNull(formData.longitudeOrigem);
+    if (lat === null || lng === null) {
+      return null;
+    }
+    return [lat, lng];
+  }, [formData.latitudeOrigem, formData.longitudeOrigem]);
 
   const findTabelaInfo = (tipoVeiculo: string, veiculoTransportadora: boolean) => {
     if (!tabelaPrecos) {
@@ -561,8 +687,8 @@ function RotaModal({
     return tabelaPrecos?.valorKm || VALORES_PADRAO.KM;
   };
 
-  const [formData, setFormData] = useState({
-    dataRota: new Date().toISOString().split('T')[0],
+  const [formData, setFormData] = useState<RotaFormData>({
+    dataRota: toLocalDateInput(new Date()),
     horaInicio: '08:00',
     horaFim: '',
     tipoVeiculo: 'CARGO_VAN',
@@ -574,6 +700,13 @@ function RotaModal({
     bonusFixo: 0,
     kmProjetado: 50,
     localId: '',
+    latitudeOrigem: '',
+    longitudeOrigem: '',
+    resgateRotaId: '',
+    codigoRota: '',
+    qtdeParadas: '',
+    qtdeLocais: '',
+    qtdePacotes: '',
   });
 
   const [valorCalculado, setValorCalculado] = useState({
@@ -597,6 +730,28 @@ function RotaModal({
       const dados = response.data?.data?.locais || response.data?.locais || response.data;
       return Array.isArray(dados) ? dados : [];
     },
+  });
+
+  const isResgate = formData.tipoRota === 'RESGATE';
+
+  const {
+    data: rotasEmAndamento = [],
+    isLoading: carregandoRotasEmAndamento,
+  } = useQuery({
+    queryKey: ['rotas-em-andamento'],
+    queryFn: async () => {
+      try {
+        const params = new URLSearchParams({ status: 'EM_ANDAMENTO' });
+        const response = await api.get(`/rotas?${params.toString()}`);
+        const dados = response.data?.data?.rotas || response.data?.rotas || response.data;
+        return Array.isArray(dados) ? dados : [];
+      } catch (error) {
+        console.error('Erro ao buscar rotas em andamento:', error);
+        return [];
+      }
+    },
+    enabled: isResgate,
+    staleTime: 60 * 1000,
   });
 
   // Calcular valores automaticamente
@@ -633,14 +788,26 @@ function RotaModal({
     tabelaPrecos,
   ]);
 
-  // Ajustar ciclo quando mudar tipo de rota
+  // Ajustar ciclo e campos auxiliares quando mudar tipo de rota
   useEffect(() => {
-    if (formData.tipoRota === 'RESGATE') {
+    if (formData.tipoRota === 'RESGATE' && formData.cicloRota !== 'SEM_CICLO') {
       setFormData(prev => ({ ...prev, cicloRota: 'SEM_CICLO' }));
-    } else if (formData.cicloRota === 'SEM_CICLO') {
-      setFormData(prev => ({ ...prev, cicloRota: 'CICLO_1' }));
+      return;
     }
-  }, [formData.tipoRota]);
+
+    if (formData.tipoRota !== 'RESGATE' && formData.cicloRota === 'SEM_CICLO') {
+      setFormData(prev => ({
+        ...prev,
+        cicloRota: 'CICLO_1',
+        resgateRotaId: '',
+        latitudeOrigem: '',
+        longitudeOrigem: '',
+        qtdeParadas: '',
+        qtdeLocais: '',
+        qtdePacotes: '',
+      }));
+    }
+  }, [formData.tipoRota, formData.cicloRota]);
 
   // Buscar dados se estiver editando
   const { data: rotaData } = useQuery({
@@ -657,7 +824,7 @@ function RotaModal({
   useEffect(() => {
     if (rotaData && isEditing) {
       setFormData({
-        dataRota: rotaData.dataRota?.split('T')[0] || new Date().toISOString().split('T')[0],
+        dataRota: rotaData.dataRota ? toLocalDateInput(new Date(rotaData.dataRota)) : toLocalDateInput(new Date()),
         horaInicio: toHourMinute(rotaData.horaInicio) || '08:00',
         horaFim: toHourMinute(rotaData.horaFim),
         tipoVeiculo: rotaData.tipoVeiculo || 'CARGO_VAN',
@@ -669,12 +836,26 @@ function RotaModal({
         bonusFixo: rotaData.bonusFixo || 0,
         kmProjetado: rotaData.kmProjetado || 50,
         localId: rotaData.localId || '',
+        latitudeOrigem: rotaData.latitudeOrigem !== null && rotaData.latitudeOrigem !== undefined ? String(rotaData.latitudeOrigem) : '',
+        longitudeOrigem: rotaData.longitudeOrigem !== null && rotaData.longitudeOrigem !== undefined ? String(rotaData.longitudeOrigem) : '',
+        resgateRotaId: '',
+        codigoRota: rotaData.codigoRota || '',
+        qtdeParadas: rotaData.qtdeParadas !== null && rotaData.qtdeParadas !== undefined ? String(rotaData.qtdeParadas) : '',
+        qtdeLocais: rotaData.qtdeLocais !== null && rotaData.qtdeLocais !== undefined ? String(rotaData.qtdeLocais) : '',
+        qtdePacotes: rotaData.qtdePacotes !== null && rotaData.qtdePacotes !== undefined ? String(rotaData.qtdePacotes) : '',
       });
     }
   }, [rotaData, isEditing]);
 
   const saveMutation = useMutation({
     mutationFn: async (data: any) => {
+      const latitude = parseNumberOrNull(data.latitudeOrigem);
+      const longitude = parseNumberOrNull(data.longitudeOrigem);
+      const qtdeParadas = parseNumberOrNull(data.qtdeParadas);
+      const qtdeLocais = parseNumberOrNull(data.qtdeLocais);
+      const qtdePacotes = parseNumberOrNull(data.qtdePacotes);
+      const codigoRotaNormalizado = data.codigoRota?.trim?.() || '';
+
       // Preparar payload com valores calculados
       const payload = {
         dataRota: new Date(data.dataRota).toISOString(),
@@ -693,6 +874,13 @@ function RotaModal({
         valorKm: valorCalculado.valorKmReferencia,
         valorTotalRota: valorCalculado.valorTotalProjetado,
         localId: data.localId,
+        latitudeOrigem: latitude,
+        longitudeOrigem: longitude,
+        qtdeParadas,
+        qtdeLocais,
+        qtdePacotes,
+        codigoRota: codigoRotaNormalizado ? codigoRotaNormalizado : null,
+        resgateRotaId: data.resgateRotaId || null,
         tabelaPrecosId: valorCalculado.tabelaPrecosId,
         status: 'DISPONIVEL', // Status inicial sempre DISPONIVEL
       };
@@ -719,6 +907,49 @@ function RotaModal({
     if (!formData.localId) {
       alert('Selecione um local de origem!');
       return;
+    }
+
+    const latitude = parseNumberOrNull(formData.latitudeOrigem);
+    const longitude = parseNumberOrNull(formData.longitudeOrigem);
+    const qtdeParadas = parseNumberOrNull(formData.qtdeParadas);
+    const qtdeLocais = parseNumberOrNull(formData.qtdeLocais);
+    const qtdePacotes = parseNumberOrNull(formData.qtdePacotes);
+
+    if (formData.qtdeParadas.trim() && qtdeParadas === null) {
+      alert('Quantidade de paradas inválida. Utilize apenas números.');
+      return;
+    }
+
+    if (formData.qtdeLocais.trim() && qtdeLocais === null) {
+      alert('Quantidade de locais inválida. Utilize apenas números.');
+      return;
+    }
+
+    if (formData.qtdePacotes.trim() && qtdePacotes === null) {
+      alert('Quantidade de pacotes inválida. Utilize apenas números.');
+      return;
+    }
+
+    if (formData.tipoRota === 'RESGATE') {
+      if (!formData.resgateRotaId) {
+        alert('Selecione a rota em andamento que será resgatada.');
+        return;
+      }
+
+      if (!formData.qtdeParadas.trim()) {
+        alert('Informe a quantidade de paradas que será resgatada.');
+        return;
+      }
+
+      if (!formData.codigoRota.trim()) {
+        alert('Informe um código para identificar a oferta de resgate.');
+        return;
+      }
+
+      if (latitude === null || longitude === null) {
+        alert('Marque a localização de origem no mapa para rotas de resgate.');
+        return;
+      }
     }
 
     if (carregandoTabelaPrecos) {
@@ -831,8 +1062,156 @@ function RotaModal({
                   {formData.tipoRota === 'RESGATE' && 'Rotas de resgate não têm ciclo'}
                 </p>
               </div>
-            </div>
           </div>
+        </div>
+
+          {formData.tipoRota === 'RESGATE' && (
+            <div className="space-y-4">
+              <h3 className="text-lg font-medium text-gray-900">Configurações do Resgate</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Rota em andamento *
+                  </label>
+                  <select
+                    value={formData.resgateRotaId}
+                    onChange={(e) => {
+                      const rotaSelecionada = rotasEmAndamento.find((rota: any) => rota.id === e.target.value);
+                      setFormData((prev) => ({
+                        ...prev,
+                        resgateRotaId: e.target.value,
+                        codigoRota: prev.codigoRota
+                          ? prev.codigoRota
+                          : rotaSelecionada?.codigoRota
+                            ? `RESGATE - ${rotaSelecionada.codigoRota}`
+                            : prev.codigoRota,
+                      }));
+                    }}
+                    disabled={carregandoRotasEmAndamento}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100"
+                  >
+                    <option value="">{carregandoRotasEmAndamento ? 'Carregando rotas...' : 'Selecione uma rota em andamento'}</option>
+                    {rotasEmAndamento.map((rota: any) => (
+                      <option key={rota.id} value={rota.id}>
+                        {(rota.codigoRota || 'Sem código')} • {formatDatePtBr(rota.dataRota)} • {toHourMinute(rota.horaInicio)}
+                      </option>
+                    ))}
+                  </select>
+                  {!carregandoRotasEmAndamento && rotasEmAndamento.length === 0 && (
+                    <p className="text-xs text-amber-600 mt-1">
+                      Nenhuma rota em andamento disponível para resgate no momento.
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Código da oferta *
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.codigoRota}
+                    onChange={(e) => setFormData({ ...formData, codigoRota: e.target.value })}
+                    placeholder="Ex.: RESGATE - ROTA 1234"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Esse código será exibido ao motorista quando a oferta for enviada.
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Qtde. de Paradas *
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={formData.qtdeParadas}
+                    onChange={(e) => setFormData({ ...formData, qtdeParadas: e.target.value })}
+                    placeholder="Ex.: 12"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Qtde. de Locais
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={formData.qtdeLocais}
+                    onChange={(e) => setFormData({ ...formData, qtdeLocais: e.target.value })}
+                    placeholder="Ex.: 8"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Qtde. de Pacotes
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={formData.qtdePacotes}
+                    onChange={(e) => setFormData({ ...formData, qtdePacotes: e.target.value })}
+                    placeholder="Ex.: 75"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Localização do motorista a ser resgatado *
+                </label>
+                <div className="h-64 rounded-lg overflow-hidden border border-gray-300">
+                  <ResgateLocationSelector
+                    position={resgatePosition}
+                    onSelect={(lat, lng) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        latitudeOrigem: lat.toFixed(6),
+                        longitudeOrigem: lng.toFixed(6),
+                      }))
+                    }
+                  />
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Latitude
+                    </label>
+                    <input
+                      type="number"
+                      step="0.000001"
+                      value={formData.latitudeOrigem}
+                      onChange={(e) => setFormData({ ...formData, latitudeOrigem: e.target.value })}
+                      placeholder="-23.550520"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Longitude
+                    </label>
+                    <input
+                      type="number"
+                      step="0.000001"
+                      value={formData.longitudeOrigem}
+                      onChange={(e) => setFormData({ ...formData, longitudeOrigem: e.target.value })}
+                      placeholder="-46.633308"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                  </div>
+                </div>
+                <p className="text-xs text-gray-500 mt-2">
+                  Clique no mapa para definir o ponto onde o motorista será resgatado ou ajuste as coordenadas manualmente.
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* Local */}
           <div>

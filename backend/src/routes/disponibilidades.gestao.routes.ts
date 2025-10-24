@@ -42,6 +42,14 @@ router.post('/buscar-motoristas', disponibilidadeController.buscarMotoristasDisp
 router.get('/motorista/:motoristaId', disponibilidadeController.buscarPorMotorista);
 
 /**
+ * @route   GET /api/gestao/disponibilidades/intervalo
+ * @desc    Listar disponibilidades no intervalo informado
+ * @access  Private (DESPACHANTE_PLANEJADOR, ADMINISTRADOR)
+ * @query   dataInicio, dataFim, disponivel
+ */
+router.get('/intervalo', disponibilidadeController.listarIntervalo);
+
+/**
  * @route   GET /api/gestao/disponibilidades
  * @desc    Listar TODAS as disponibilidades com filtros (visão geral)
  * @access  Private (DESPACHANTE_PLANEJADOR, ADMINISTRADOR)

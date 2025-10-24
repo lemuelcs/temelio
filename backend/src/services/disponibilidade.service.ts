@@ -391,6 +391,44 @@ class DisponibilidadeService {
 
     return resumo;
   }
+
+  /**
+   * Buscar disponibilidades no intervalo informado (gestão)
+   */
+  async buscarIntervalo(
+    dataInicio: Date,
+    dataFim: Date,
+    apenasDisponiveis: boolean
+  ) {
+    const where: any = {
+      data: {
+        gte: dataInicio,
+        lte: dataFim
+      }
+    };
+
+    if (apenasDisponiveis) {
+      where.disponivel = true;
+    }
+
+    const disponibilidades = await prisma.disponibilidade.findMany({
+      where,
+      select: {
+        id: true,
+        motoristaId: true,
+        data: true,
+        ciclo: true,
+        disponivel: true
+      },
+      orderBy: [
+        { data: 'asc' },
+        { ciclo: 'asc' },
+        { motoristaId: 'asc' }
+      ]
+    });
+
+    return disponibilidades;
+  }
 }
 
 export default new DisponibilidadeService();
