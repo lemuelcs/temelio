@@ -71,7 +71,7 @@ enum StatusOferta {
 
 enum TipoServico {
   BIKE
-  SMALL_VAN
+  CARGO_VAN
   LARGE_VAN
   HELPER
   PASSENGER
