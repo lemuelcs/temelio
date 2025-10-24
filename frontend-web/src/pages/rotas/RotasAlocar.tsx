@@ -101,9 +101,20 @@ export default function RotasAlocacao() {
           dataFim,
         });
 
+        console.log('📊 BUSCANDO ROTAS:', { status: 'DISPONIVEL', dataInicio, dataFim });
         const response = await api.get(`/rotas?${params.toString()}`);
         const dados = response.data?.data?.rotas || response.data?.rotas || response.data;
-        return Array.isArray(dados) ? dados : [];
+        const resultado = Array.isArray(dados) ? dados : [];
+        console.log('📊 ROTAS CARREGADAS:', resultado.length);
+        console.log('📊 Detalhes das rotas:', resultado.map((r: any) => ({
+          id: r.id,
+          codigoRota: r.codigoRota,
+          dataRota: r.dataRota,
+          cicloRota: r.cicloRota,
+          tipoVeiculo: r.tipoVeiculo,
+          status: r.status,
+        })));
+        return resultado;
       } catch (error) {
         console.error('Erro ao buscar rotas:', error);
         return [];
@@ -120,7 +131,15 @@ export default function RotasAlocacao() {
         const params = new URLSearchParams({ status: 'ATIVO', limit: '200' });
         const response = await api.get(`/gestao/motoristas?${params.toString()}`);
         const dados = response.data?.data?.motoristas || response.data?.motoristas || response.data;
-        return Array.isArray(dados) ? dados : [];
+        const resultado = Array.isArray(dados) ? dados : [];
+        console.log('📊 MOTORISTAS CARREGADOS:', resultado.length);
+        console.log('📊 Detalhes dos motoristas:', resultado.map((m: any) => ({
+          id: m.id,
+          nome: m.nomeCompleto,
+          tipoVeiculo: m.tipoVeiculo,
+          status: m.status,
+        })));
+        return resultado;
       } catch (error) {
         console.error('Erro ao buscar motoristas:', error);
         return [];
@@ -142,9 +161,18 @@ export default function RotasAlocacao() {
           dataFim,
         });
 
+        console.log('📊 BUSCANDO DISPONIBILIDADES:', { dataInicio, dataFim });
         const response = await api.get(`/gestao/disponibilidades/intervalo?${params.toString()}`);
         const dados = response.data?.data || response.data;
-        return Array.isArray(dados) ? dados : [];
+        const resultado = Array.isArray(dados) ? dados : [];
+        console.log('📊 DISPONIBILIDADES CARREGADAS:', resultado.length);
+        console.log('📊 Detalhes das disponibilidades:', resultado.map((d: any) => ({
+          motoristaId: d.motoristaId,
+          data: d.data,
+          ciclo: d.ciclo,
+          disponivel: d.disponivel,
+        })));
+        return resultado;
       } catch (error: any) {
         console.error('Erro ao buscar disponibilidades:', error);
         console.error('Detalhes do erro:', {
@@ -186,15 +214,35 @@ export default function RotasAlocacao() {
 
   // Verificar se motorista tem disponibilidade para a rota
   const motoristaTemDisponibilidade = (motoristaId: string, dataRota: string, ciclo: string): boolean => {
+    console.log('  >> Verificando disponibilidade para motorista:', motoristaId);
+    console.log('  >> Data da rota:', dataRota);
+    console.log('  >> Ciclo da rota:', ciclo);
+
     const dataRotaObj = new Date(dataRota);
     if (Number.isNaN(dataRotaObj.getTime())) {
+      console.log('  >> ❌ Data da rota inválida');
       return false;
     }
 
     const dataRotaStr = dataRotaObj.toISOString().split('T')[0];
     const cicloNormalizado = normalizarCiclo(ciclo);
+    console.log('  >> Data normalizada:', dataRotaStr);
+    console.log('  >> Ciclo normalizado:', cicloNormalizado);
 
-    return disponibilidades.some((d: any) => {
+    // Filtrar disponibilidades do motorista
+    const disponibilidadesMotorista = disponibilidades.filter((d: any) => d.motoristaId === motoristaId);
+    console.log('  >> Disponibilidades do motorista:', disponibilidadesMotorista.length);
+
+    if (disponibilidadesMotorista.length > 0) {
+      console.log('  >> Detalhes das disponibilidades:');
+      disponibilidadesMotorista.forEach((d: any) => {
+        const dataDispObj = new Date(d.data);
+        const dataDispStr = dataDispObj.toISOString().split('T')[0];
+        console.log('    - Data:', d.data, '→', dataDispStr, '| Ciclo:', d.ciclo, '→', normalizarCiclo(d.ciclo), '| Disponível:', d.disponivel);
+      });
+    }
+
+    const resultado = disponibilidades.some((d: any) => {
       if (d.motoristaId !== motoristaId) {
         return false;
       }
@@ -213,8 +261,18 @@ export default function RotasAlocacao() {
         return d.disponivel !== false;
       }
 
-      return normalizarCiclo(d.ciclo) === cicloNormalizado && d.disponivel !== false;
+      const cicloDispNormalizado = normalizarCiclo(d.ciclo);
+      const match = cicloDispNormalizado === cicloNormalizado && d.disponivel !== false;
+
+      if (match) {
+        console.log('  >> ✅ Match encontrado!', { data: dataDisponibilidadeStr, ciclo: cicloDispNormalizado, disponivel: d.disponivel });
+      }
+
+      return match;
     });
+
+    console.log('  >> Resultado final:', resultado ? '✅ TEM' : '❌ NÃO TEM');
+    return resultado;
   };
 
   // Filtrar motoristas elegíveis para uma rota
@@ -222,21 +280,58 @@ export default function RotasAlocacao() {
     // IDs dos motoristas já alocados
     const motoristasAlocados = alocacoes.map((a) => a.motoristaId);
 
-    return motoristas.filter((m: any) => {
+    console.log('=== DEBUG getMotoristasPorRota ===');
+    console.log('Rota:', {
+      id: rota.id,
+      codigoRota: rota.codigoRota,
+      dataRota: rota.dataRota,
+      cicloRota: rota.cicloRota,
+      tipoVeiculo: rota.tipoVeiculo,
+    });
+    console.log('Total de motoristas:', motoristas.length);
+    console.log('Total de disponibilidades:', disponibilidades.length);
+
+    const resultado = motoristas.filter((m: any) => {
+      const motoristaDebug = {
+        id: m.id,
+        nome: m.nomeCompleto,
+        tipoVeiculo: m.tipoVeiculo,
+        status: m.status,
+      };
+
       // Verificar se já foi alocado
-      if (motoristasAlocados.includes(m.id)) return false;
+      if (motoristasAlocados.includes(m.id)) {
+        console.log('❌ Motorista já alocado:', motoristaDebug);
+        return false;
+      }
 
       // Verificar se o tipo de veículo é compatível
-      if (m.tipoVeiculo !== rota.tipoVeiculo) return false;
+      if (m.tipoVeiculo !== rota.tipoVeiculo) {
+        console.log('❌ Tipo de veículo incompatível:', motoristaDebug, 'esperado:', rota.tipoVeiculo);
+        return false;
+      }
 
       // Verificar se está ativo
-      if (m.status !== 'ATIVO') return false;
+      if (m.status !== 'ATIVO') {
+        console.log('❌ Status não é ATIVO:', motoristaDebug);
+        return false;
+      }
 
       // Verificar disponibilidade
-      if (!motoristaTemDisponibilidade(m.id, rota.dataRota, rota.cicloRota)) return false;
+      const temDisponibilidade = motoristaTemDisponibilidade(m.id, rota.dataRota, rota.cicloRota);
+      if (!temDisponibilidade) {
+        console.log('❌ Sem disponibilidade:', motoristaDebug);
+        return false;
+      }
 
+      console.log('✅ Motorista elegível:', motoristaDebug);
       return true;
     });
+
+    console.log('Total de motoristas elegíveis:', resultado.length);
+    console.log('=====================================\n');
+
+    return resultado;
   };
 
   // Alocar motorista a uma rota
