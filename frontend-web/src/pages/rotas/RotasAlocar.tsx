@@ -150,7 +150,7 @@ export default function RotasAlocacao() {
     // Mapear ciclo para turno
     const turnoMap: Record<string, string> = {
       CICLO_1: 'MATUTINO',
-      CICLO_SPEED: 'VESPERTINO',
+      CICLO_2: 'VESPERTINO',
       SAME_DAY: 'NOTURNO',
       SEM_CICLO: 'MATUTINO', // Padrão
     };
@@ -234,7 +234,7 @@ export default function RotasAlocacao() {
   const getCicloLabel = (ciclo: string) => {
     const labels: Record<string, string> = {
       CICLO_1: 'Ciclo 1 (Manhã)',
-      CICLO_SPEED: 'Ciclo Speed (Tarde)',
+      CICLO_2: 'Ciclo 2 (Tarde)',
       SAME_DAY: 'Same Day (Noite)',
       SEM_CICLO: 'Sem Ciclo',
     };
