@@ -355,11 +355,8 @@ class RotaController {
         include: {
           rota: {
             include: {
-              enderecos: {
-                orderBy: {
-                  ordem: 'asc'
-                }
-              },
+              local: true,
+              motorista: true,
             },
           },
         },
@@ -449,11 +446,11 @@ class RotaController {
         },
       });
 
-      // Atualizar status da rota para ALOCADA
+      // Atualizar status da rota para ACEITA
       await prisma.rota.update({
         where: { id: oferta.rotaId },
         data: {
-          status: 'ALOCADA',
+          status: StatusRota.ACEITA,
           motoristaId: motoristaId,
         },
       });
@@ -553,10 +550,10 @@ class RotaController {
         },
       });
 
-      // Atualizar status da rota de volta para PLANEJADA
+      // Atualizar status da rota de volta para DISPONIVEL
       await prisma.rota.update({
         where: { id: oferta.rotaId },
-        data: { status: 'PLANEJADA' },
+        data: { status: StatusRota.DISPONIVEL },
       });
 
       return res.json({
@@ -633,17 +630,18 @@ class RotaController {
         },
       });
 
-      // Criar histórico de tracking
-      await prisma.historicoTracking.create({
-        data: {
-          rotaId: id,
-          statusTracking: statusTracking as StatusTracking,
-          latitude,
-          longitude,
-          observacao,
-          createdAt: new Date(),
-        },
-      });
+      // TODO: Criar histórico de tracking
+      // Modelo historicoTracking ainda não foi criado no schema Prisma
+      // await prisma.historicoTracking.create({
+      //   data: {
+      //     rotaId: id,
+      //     statusTracking: statusTracking as StatusTracking,
+      //     latitude,
+      //     longitude,
+      //     observacao,
+      //     createdAt: new Date(),
+      //   },
+      // });
 
       return res.json({
         status: 'success',
