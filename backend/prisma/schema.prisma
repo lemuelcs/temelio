@@ -69,6 +69,14 @@ enum StatusOferta {
   EXPIRADA
 }
 
+enum StatusTracking {
+  AGUARDANDO
+  A_CAMINHO
+  NO_LOCAL
+  ROTA_INICIADA
+  ROTA_CONCLUIDA
+}
+
 enum TipoServico {
   BIKE
   CARGO_VAN
@@ -342,9 +350,14 @@ model Rota {
   valorCancelamento     Decimal?       @db.Decimal(10, 2)
   motoristaId           String?
   criadoPor             String
+  statusTracking        StatusTracking? @default(AGUARDANDO)
+  timestampACaminho     DateTime?
+  timestampNoLocal      DateTime?
+  timestampRotaIniciada DateTime?
+  timestampRotaConcluida DateTime?
   createdAt             DateTime       @default(now())
   updatedAt             DateTime       @updatedAt
-  
+
   local                 Local          @relation(fields: [localId], references: [id])
   motorista             Motorista?     @relation(fields: [motoristaId], references: [id])
   tabelaPrecos          TabelaPreco?   @relation(fields: [tabelaPrecosId], references: [id])
@@ -368,6 +381,7 @@ model OfertaRota {
   dataEnvio           DateTime      @default(now())
   dataVisualizacao    DateTime?
   dataResposta        DateTime?
+  motivoRecusa        String?       @db.Text
   ipResposta          String?       @db.VarChar(45)
   dispositivoResposta String?       @db.VarChar(100)
   latitudeResposta    Decimal?      @db.Decimal(10, 8)
@@ -375,7 +389,7 @@ model OfertaRota {
   adicionouAgenda     Boolean       @default(false)
   createdAt           DateTime      @default(now())
   updatedAt           DateTime      @updatedAt
-  
+
   motorista           Motorista     @relation(fields: [motoristaId], references: [id])
   rota                Rota          @relation(fields: [rotaId], references: [id])
 
