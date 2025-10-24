@@ -129,7 +129,7 @@ export default function RotasAlocacao() {
   });
 
   // Buscar disponibilidades dos motoristas
-  const { data: disponibilidades = [] } = useQuery({
+  const { data: disponibilidades = [], isError: errorDisponibilidades, error: disponibilidadesError } = useQuery({
     queryKey: ['disponibilidades', filterData],
     queryFn: async () => {
       if (!filterData) return [];
@@ -145,12 +145,18 @@ export default function RotasAlocacao() {
         const response = await api.get(`/gestao/disponibilidades/intervalo?${params.toString()}`);
         const dados = response.data?.data || response.data;
         return Array.isArray(dados) ? dados : [];
-      } catch (error) {
+      } catch (error: any) {
         console.error('Erro ao buscar disponibilidades:', error);
-        return [];
+        console.error('Detalhes do erro:', {
+          status: error.response?.status,
+          message: error.response?.data?.message,
+          url: error.config?.url
+        });
+        throw error; // Propagar o erro para que o useQuery possa capturá-lo
       }
     },
     enabled: !!filterData,
+    retry: 1, // Tentar apenas uma vez em caso de erro
   });
 
   // Enviar ofertas de rotas
@@ -331,6 +337,44 @@ export default function RotasAlocacao() {
         </div>
       </div>
 
+      {/* Avisos de erro ou falta de dados */}
+      {errorDisponibilidades && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+            <div>
+              <h3 className="font-semibold text-red-900">Erro ao buscar disponibilidades</h3>
+              <p className="text-sm text-red-700 mt-1">
+                Não foi possível carregar as disponibilidades dos motoristas.
+                {(disponibilidadesError as any)?.response?.status === 404
+                  ? ' O endpoint de disponibilidades não foi encontrado. Verifique se o backend está rodando e configurado corretamente.'
+                  : ` ${(disponibilidadesError as any)?.response?.data?.message || 'Erro desconhecido.'}`}
+              </p>
+              <p className="text-sm text-red-600 mt-2">
+                <strong>Impacto:</strong> Nenhum motorista será considerado elegível até que as disponibilidades sejam carregadas.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {!errorDisponibilidades && disponibilidades.length === 0 && !isLoading && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
+            <div>
+              <h3 className="font-semibold text-yellow-900">Nenhuma disponibilidade encontrada</h3>
+              <p className="text-sm text-yellow-700 mt-1">
+                Não há motoristas com disponibilidade cadastrada para o período selecionado.
+              </p>
+              <p className="text-sm text-yellow-600 mt-2">
+                <strong>Impacto:</strong> Nenhum motorista será considerado elegível. Solicite aos motoristas que cadastrem suas disponibilidades.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Estatísticas */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
@@ -451,9 +495,23 @@ export default function RotasAlocacao() {
                         ))}
                       </select>
                       {motoristasElegiveis.length === 0 && (
-                        <p className="mt-2 text-xs text-red-600">
-                          ⚠️ Nenhum motorista elegível (verificar tipo de veículo e disponibilidade)
-                        </p>
+                        <div className="mt-2 text-xs text-red-600">
+                          <p className="font-semibold">⚠️ Nenhum motorista elegível</p>
+                          <p className="mt-1">
+                            Verifique se há motoristas:
+                          </p>
+                          <ul className="list-disc list-inside mt-1 space-y-0.5">
+                            <li>Com tipo de veículo: {getTipoVeiculoLabel(rota.tipoVeiculo)}</li>
+                            <li>Com status ATIVO</li>
+                            <li>Com disponibilidade para {formatDate(rota.dataRota)} - {getCicloLabel(rota.cicloRota)}</li>
+                            <li>Que ainda não foram alocados a outras rotas</li>
+                          </ul>
+                          {disponibilidades.length === 0 && (
+                            <p className="mt-2 text-red-700 font-semibold">
+                              ⚠️ Nenhuma disponibilidade foi carregada. Veja o alerta acima.
+                            </p>
+                          )}
+                        </div>
                       )}
                       {alocacao && (
                         <p className="mt-2 text-xs text-green-600 flex items-center gap-1">
