@@ -85,16 +85,6 @@ export default function RotasAlocacao() {
     setFilterData(toLocalDateInput(hoje));
   }, []);
 
-  // Gerar relatório de debug quando os dados mudarem
-  useEffect(() => {
-    if (rotas.length > 0 && motoristas.length > 0) {
-      // Aguardar um pouco para garantir que todos os logs foram processados
-      setTimeout(() => {
-        gerarRelatorioDebug();
-      }, 1000);
-    }
-  }, [rotas, motoristas, disponibilidades]);
-
   // Função para gerar relatório de debug consolidado
   const gerarRelatorioDebug = () => {
     const relatorio = {
@@ -255,6 +245,16 @@ export default function RotasAlocacao() {
     enabled: !!filterData,
     retry: 1, // Tentar apenas uma vez em caso de erro
   });
+
+  // Gerar relatório de debug quando os dados mudarem
+  useEffect(() => {
+    if (rotas.length > 0 && motoristas.length > 0) {
+      // Aguardar um pouco para garantir que todos os logs foram processados
+      setTimeout(() => {
+        gerarRelatorioDebug();
+      }, 1000);
+    }
+  }, [rotas, motoristas, disponibilidades]);
 
   // Enviar ofertas de rotas
   const enviarOfertasMutation = useMutation({
