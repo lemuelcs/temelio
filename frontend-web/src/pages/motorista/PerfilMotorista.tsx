@@ -1,9 +1,16 @@
 // frontend/src/pages/motorista/Perfil.tsx
-import { User, Mail, Phone, MapPin, Truck, Award } from 'lucide-react';
+import { User, Mail, Phone, MapPin, Truck, Award, LogOut } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import { useNavigate } from 'react-router-dom';
 
 export default function PerfilMotorista() {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
+
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
+  };
 
   return (
     <div className="space-y-6">
@@ -66,24 +73,35 @@ export default function PerfilMotorista() {
         <h3 className="text-lg font-semibold text-gray-900 mb-4">
           📊 Suas Estatísticas
         </h3>
-        
+
         <div className="grid grid-cols-2 gap-4">
           <div className="bg-gray-50 rounded-lg p-4 text-center">
             <Truck className="w-6 h-6 text-blue-600 mx-auto mb-2" />
             <p className="text-2xl font-bold text-gray-900">—</p>
             <p className="text-xs text-gray-600">Rotas Concluídas</p>
           </div>
-          
+
           <div className="bg-gray-50 rounded-lg p-4 text-center">
             <Award className="w-6 h-6 text-green-600 mx-auto mb-2" />
             <p className="text-2xl font-bold text-gray-900">—</p>
             <p className="text-xs text-gray-600">Taxa de Sucesso</p>
           </div>
         </div>
-        
+
         <p className="text-sm text-gray-500 text-center mt-4 italic">
           Estatísticas detalhadas em breve...
         </p>
+      </div>
+
+      {/* Botão de Sair */}
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <button
+          onClick={handleLogout}
+          className="w-full flex items-center justify-center gap-3 bg-red-600 hover:bg-red-700 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
+        >
+          <LogOut className="w-5 h-5" />
+          <span>Sair do Aplicativo</span>
+        </button>
       </div>
     </div>
   );
