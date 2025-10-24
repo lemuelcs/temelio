@@ -18,7 +18,8 @@ import {
   ChevronDown,
   ChevronRight,
   Settings,
-  ClipboardList // ⭐ NOVO: Ícone para Resumo
+  ClipboardList, // ⭐ NOVO: Ícone para Resumo
+  Eye // ⭐ NOVO: Ícone para Monitoramento
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -31,6 +32,7 @@ const rotasSubmenu = [
   { path: '/rotas/alocar', icon: Truck, label: 'Alocar (D-1)' },
   { path: '/rotas/confirmar', icon: CheckCircle, label: 'Confirmar (D+0)' },
   { path: '/rotas/validar', icon: TrendingUp, label: 'Validar (D+1)' },
+  { path: '/rotas/monitoramento', icon: Eye, label: 'Monitoramento' },
 ];
 
 // ⭐ NOVO: Estrutura de submenu para Disponibilidades

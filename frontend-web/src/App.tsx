@@ -11,6 +11,7 @@ import Rotas from './pages/rotas/Rotas';
 import RotasAlocar from './pages/rotas/RotasAlocar';
 import RotasConfirmar from './pages/rotas/RotasConfirmar';
 import RotasValidar from './pages/rotas/RotasValidar';
+import RotasMonitoramento from './pages/rotas/RotasMonitoramento';
 import GestaoDisponibilidades from './pages/disponibilidades/GestaoDisponibilidades';
 import GestaoDisponibilidadesResumo from './pages/disponibilidades/GestaoDisponibilidadesResumo';
 import Alertas from './pages/alertas/Alertas';
@@ -159,7 +160,17 @@ function AppRoutes() {
             </PrivateRoute>
           }
         />
-        
+        <Route
+          path="/rotas/monitoramento"
+          element={
+            <PrivateRoute allowedProfiles={['ADMINISTRADOR', 'DESPACHANTE_PLANEJADOR']}>
+              <Layout>
+                <RotasMonitoramento />
+              </Layout>
+            </PrivateRoute>
+          }
+        />
+
         <Route
           path="/disponibilidades"
           element={

@@ -8,14 +8,22 @@ export type StatusAtivacao = 'ATIVO' | 'INATIVO' | 'BLOQUEADO';
 export type Turno = 'MANHA' | 'TARDE' | 'NOITE';
 
 // Status de Rota
-export type StatusRota = 
-  | 'PLANEJADA' 
-  | 'OFERTADA' 
-  | 'ACEITA' 
-  | 'RECUSADA' 
-  | 'EM_ANDAMENTO' 
-  | 'CONCLUIDA' 
+export type StatusRota =
+  | 'PLANEJADA'
+  | 'OFERTADA'
+  | 'ACEITA'
+  | 'RECUSADA'
+  | 'EM_ANDAMENTO'
+  | 'CONCLUIDA'
   | 'CANCELADA';
+
+// Status de Tracking do Motorista
+export type StatusTrackingMotorista =
+  | 'AGUARDANDO'
+  | 'A_CAMINHO'
+  | 'NO_LOCAL'
+  | 'ROTA_INICIADA'
+  | 'ROTA_CONCLUIDA';
 
 // Status de Documento
 export type StatusDocumento = 'VALIDO' | 'VENCENDO' | 'VENCIDO';
@@ -67,6 +75,16 @@ export interface Rota {
   localDestino?: Local;
   motorista?: Motorista;
   ofertas?: OfertaRota[];
+  tipoRota?: 'NORMAL' | 'RESGATE';
+  horaInicio?: string;
+  qtdeParadas?: number;
+  qtdePacotes?: number;
+  qtdeLocais?: number;
+  statusTracking?: StatusTrackingMotorista;
+  timestampACaminho?: string;
+  timestampNoLocal?: string;
+  timestampRotaIniciada?: string;
+  timestampRotaConcluida?: string;
 }
 
 // Interface de Oferta de Rota
@@ -219,4 +237,12 @@ export const TipoLocalLabels: Record<TipoLocal, string> = {
   ESTACAO: 'Estação',
   CLIENTE: 'Cliente',
   CENTRO_DISTRIBUICAO: 'Centro de Distribuição',
+};
+
+export const StatusTrackingMotoristaLabels: Record<StatusTrackingMotorista, string> = {
+  AGUARDANDO: 'Aguardando',
+  A_CAMINHO: 'À caminho',
+  NO_LOCAL: 'No local para carregar',
+  ROTA_INICIADA: 'Rota em andamento',
+  ROTA_CONCLUIDA: 'Rota concluída',
 };
