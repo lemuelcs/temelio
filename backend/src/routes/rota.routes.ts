@@ -134,53 +134,6 @@ router.patch(
 );
 
 /**
- * @route   POST /api/ofertas-rotas
- * @desc    Criar oferta de rota para motorista
- * @access  Private (DESPACHANTE_PLANEJADOR)
- */
-router.post(
-  '/ofertas-rotas',
-  authenticate,
-  authorize('DESPACHANTE_PLANEJADOR', 'ADMINISTRADOR'),
-  rotaController.criarOferta
-);
-
-/**
- * @route   GET /api/ofertas-rotas
- * @desc    Listar ofertas de rotas para o motorista
- * @access  Private (MOTORISTA)
- */
-router.get(
-  '/ofertas-rotas',
-  authenticate,
-  rotaController.listarOfertas
-);
-
-/**
- * @route   PATCH /api/ofertas-rotas/:id/aceitar
- * @desc    Aceitar oferta de rota
- * @access  Private (MOTORISTA)
- */
-router.patch(
-  '/ofertas-rotas/:id/aceitar',
-  authenticate,
-  authorize('MOTORISTA'),
-  rotaController.aceitarOferta
-);
-
-/**
- * @route   PATCH /api/ofertas-rotas/:id/recusar
- * @desc    Recusar oferta de rota
- * @access  Private (MOTORISTA)
- */
-router.patch(
-  '/ofertas-rotas/:id/recusar',
-  authenticate,
-  authorize('MOTORISTA'),
-  rotaController.recusarOferta
-);
-
-/**
  * @route   PATCH /api/rotas/:id/tracking
  * @desc    Atualizar status de tracking da rota
  * @access  Private (MOTORISTA)

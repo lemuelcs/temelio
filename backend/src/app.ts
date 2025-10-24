@@ -15,6 +15,7 @@ import tabelaPrecosRoutes from './routes/tabelaPrecos.routes';
 import dashboardRoutes from './routes/dashboard.routes';
 import gestaoMotoristasRoutes from './routes/gestao.motoristas.routes';
 import motoristaRoutes from './routes/motorista.routes';
+import ofertaRotasRoutes from './routes/oferta.rotas.routes';
 
 
 // Importar middlewares
@@ -78,6 +79,7 @@ app.use('/api/tabela-precos', tabelaPrecosRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/motoristas', motoristaRoutes);
 app.use('/api/gestao/motoristas', gestaoMotoristasRoutes);
+app.use('/api/ofertas-rotas', ofertaRotasRoutes);
 
 // ========================================
 // MIDDLEWARE DE ERRO (DEVE SER O ÚLTIMO)
