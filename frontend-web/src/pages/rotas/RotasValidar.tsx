@@ -136,7 +136,7 @@ export default function RotasValidar() {
   const getCicloLabel = (ciclo: string) => {
     const labels: Record<string, string> = {
       CICLO_1: 'C1',
-      CICLO_SPEED: 'Speed',
+      CICLO_2: 'C2',
       SAME_DAY: 'Same Day',
       SEM_CICLO: '-',
     };

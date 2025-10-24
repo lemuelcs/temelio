@@ -244,7 +244,7 @@ export default function Rotas() {
   const getCicloLabel = (ciclo: string) => {
     const labels: Record<string, string> = {
       CICLO_1: 'Ciclo 1 (Manhã)',
-      CICLO_SPEED: 'Ciclo Speed (Tarde)',
+      CICLO_2: 'Ciclo 2 (Tarde)',
       SAME_DAY: 'Same Day (Noite)',
       SEM_CICLO: 'Sem Ciclo',
     };
@@ -354,7 +354,7 @@ export default function Rotas() {
           >
             <option value="">Todos os ciclos</option>
             <option value="CICLO_1">Ciclo 1 (Manhã)</option>
-            <option value="CICLO_SPEED">Ciclo Speed (Tarde)</option>
+            <option value="CICLO_2">Ciclo 2 (Tarde)</option>
             <option value="SAME_DAY">Same Day (Noite)</option>
             <option value="SEM_CICLO">Sem Ciclo</option>
           </select>
@@ -823,7 +823,7 @@ function RotaModal({
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100"
                 >
                   <option value="CICLO_1">Ciclo 1 (Manhã)</option>
-                  <option value="CICLO_SPEED">Ciclo Speed (Tarde)</option>
+                  <option value="CICLO_2">Ciclo 2 (Tarde)</option>
                   <option value="SAME_DAY">Same Day (Noite)</option>
                   <option value="SEM_CICLO">Sem Ciclo</option>
                 </select>

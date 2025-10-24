@@ -62,7 +62,7 @@ export default function RotasConfirmar() {
   const getCicloLabel = (ciclo: string) => {
     const labels: Record<string, string> = {
       CICLO_1: 'Ciclo 1',
-      CICLO_SPEED: 'Speed',
+      CICLO_2: 'Ciclo 2',
       SAME_DAY: 'Same Day',
       SEM_CICLO: 'Sem Ciclo',
     };
