@@ -117,8 +117,8 @@ export default function RotasAlocacao() {
     queryKey: ['motoristas-ativos'],
     queryFn: async () => {
       try {
-        const params = new URLSearchParams({ status: 'ATIVO' });
-        const response = await api.get(`/motoristas?${params.toString()}`);
+        const params = new URLSearchParams({ status: 'ATIVO', limit: '200' });
+        const response = await api.get(`/gestao/motoristas?${params.toString()}`);
         const dados = response.data?.data?.motoristas || response.data?.motoristas || response.data;
         return Array.isArray(dados) ? dados : [];
       } catch (error) {
