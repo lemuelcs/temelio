@@ -85,6 +85,75 @@ export default function RotasAlocacao() {
     setFilterData(toLocalDateInput(hoje));
   }, []);
 
+  // Gerar relatório de debug quando os dados mudarem
+  useEffect(() => {
+    if (rotas.length > 0 && motoristas.length > 0) {
+      // Aguardar um pouco para garantir que todos os logs foram processados
+      setTimeout(() => {
+        gerarRelatorioDebug();
+      }, 1000);
+    }
+  }, [rotas, motoristas, disponibilidades]);
+
+  // Função para gerar relatório de debug consolidado
+  const gerarRelatorioDebug = () => {
+    const relatorio = {
+      timestamp: new Date().toISOString(),
+      filtroData: filterData,
+      resumo: {
+        totalRotas: rotas.length,
+        totalMotoristas: motoristas.length,
+        totalDisponibilidades: disponibilidades.length,
+        totalAlocacoes: alocacoes.length,
+      },
+      rotas: rotas.map((r: any) => ({
+        id: r.id,
+        codigoRota: r.codigoRota,
+        dataRota: r.dataRota,
+        cicloRota: r.cicloRota,
+        tipoVeiculo: r.tipoVeiculo,
+        status: r.status,
+      })),
+      motoristas: motoristas.map((m: any) => ({
+        id: m.id,
+        nomeCompleto: m.nomeCompleto,
+        tipoVeiculo: m.tipoVeiculo,
+        status: m.status,
+      })),
+      disponibilidades: disponibilidades.map((d: any) => ({
+        motoristaId: d.motoristaId,
+        data: d.data,
+        ciclo: d.ciclo,
+        disponivel: d.disponivel,
+      })),
+      analiseElegibilidade: rotas.map((rota: any) => {
+        const elegiveis = getMotoristasPorRota(rota);
+        return {
+          rotaId: rota.id,
+          codigoRota: rota.codigoRota,
+          dataRota: rota.dataRota,
+          cicloRota: rota.cicloRota,
+          tipoVeiculo: rota.tipoVeiculo,
+          motoristasElegiveis: elegiveis.length,
+          motoristas: elegiveis.map((m: any) => ({
+            id: m.id,
+            nome: m.nomeCompleto,
+          })),
+        };
+      }),
+    };
+
+    console.log('\n\n═══════════════════════════════════════════════════════');
+    console.log('📋 RELATÓRIO DE DEBUG - ALOCAÇÃO DE ROTAS');
+    console.log('═══════════════════════════════════════════════════════\n');
+    console.log(JSON.stringify(relatorio, null, 2));
+    console.log('\n═══════════════════════════════════════════════════════');
+    console.log('💡 COPIE O JSON ACIMA E ENVIE PARA ANÁLISE');
+    console.log('═══════════════════════════════════════════════════════\n\n');
+
+    return relatorio;
+  };
+
   // Buscar rotas disponíveis
   const { data: rotas = [], isLoading: loadingRotas } = useQuery({
     queryKey: ['rotas-disponiveis', filterData],
@@ -101,9 +170,20 @@ export default function RotasAlocacao() {
           dataFim,
         });
 
+        console.log('📊 BUSCANDO ROTAS:', { status: 'DISPONIVEL', dataInicio, dataFim });
         const response = await api.get(`/rotas?${params.toString()}`);
         const dados = response.data?.data?.rotas || response.data?.rotas || response.data;
-        return Array.isArray(dados) ? dados : [];
+        const resultado = Array.isArray(dados) ? dados : [];
+        console.log('📊 ROTAS CARREGADAS:', resultado.length);
+        console.log('📊 Detalhes das rotas:', resultado.map((r: any) => ({
+          id: r.id,
+          codigoRota: r.codigoRota,
+          dataRota: r.dataRota,
+          cicloRota: r.cicloRota,
+          tipoVeiculo: r.tipoVeiculo,
+          status: r.status,
+        })));
+        return resultado;
       } catch (error) {
         console.error('Erro ao buscar rotas:', error);
         return [];
@@ -120,7 +200,15 @@ export default function RotasAlocacao() {
         const params = new URLSearchParams({ status: 'ATIVO', limit: '200' });
         const response = await api.get(`/gestao/motoristas?${params.toString()}`);
         const dados = response.data?.data?.motoristas || response.data?.motoristas || response.data;
-        return Array.isArray(dados) ? dados : [];
+        const resultado = Array.isArray(dados) ? dados : [];
+        console.log('📊 MOTORISTAS CARREGADOS:', resultado.length);
+        console.log('📊 Detalhes dos motoristas:', resultado.map((m: any) => ({
+          id: m.id,
+          nome: m.nomeCompleto,
+          tipoVeiculo: m.tipoVeiculo,
+          status: m.status,
+        })));
+        return resultado;
       } catch (error) {
         console.error('Erro ao buscar motoristas:', error);
         return [];
@@ -142,9 +230,18 @@ export default function RotasAlocacao() {
           dataFim,
         });
 
+        console.log('📊 BUSCANDO DISPONIBILIDADES:', { dataInicio, dataFim });
         const response = await api.get(`/gestao/disponibilidades/intervalo?${params.toString()}`);
         const dados = response.data?.data || response.data;
-        return Array.isArray(dados) ? dados : [];
+        const resultado = Array.isArray(dados) ? dados : [];
+        console.log('📊 DISPONIBILIDADES CARREGADAS:', resultado.length);
+        console.log('📊 Detalhes das disponibilidades:', resultado.map((d: any) => ({
+          motoristaId: d.motoristaId,
+          data: d.data,
+          ciclo: d.ciclo,
+          disponivel: d.disponivel,
+        })));
+        return resultado;
       } catch (error: any) {
         console.error('Erro ao buscar disponibilidades:', error);
         console.error('Detalhes do erro:', {
@@ -219,11 +316,11 @@ export default function RotasAlocacao() {
 
   // Filtrar motoristas elegíveis para uma rota
   const getMotoristasPorRota = (rota: Rota): Motorista[] => {
-    // IDs dos motoristas já alocados
+    // IDs dos motoristas já alocados (apenas nesta sessão, não no banco)
     const motoristasAlocados = alocacoes.map((a) => a.motoristaId);
 
     return motoristas.filter((m: any) => {
-      // Verificar se já foi alocado
+      // Verificar se já foi alocado nesta sessão
       if (motoristasAlocados.includes(m.id)) return false;
 
       // Verificar se o tipo de veículo é compatível
@@ -255,6 +352,11 @@ export default function RotasAlocacao() {
       }
       return [...prev, { rotaId, motoristaId }];
     });
+  };
+
+  // Desalocar motorista de uma rota
+  const handleDesalocar = (rotaId: string) => {
+    setAlocacoes((prev) => prev.filter((a) => a.rotaId !== rotaId));
   };
 
   // Enviar ofertas
@@ -323,17 +425,26 @@ export default function RotasAlocacao() {
 
       {/* Filtro de Data */}
       <div className="bg-white rounded-lg shadow p-4">
-        <div className="flex items-center gap-4">
-          <label className="text-sm font-medium text-gray-700">Data de Referência:</label>
-          <input
-            type="date"
-            value={filterData}
-            onChange={(e) => setFilterData(e.target.value)}
-            className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          />
-          <span className="text-sm text-gray-600">
-            (Mostra rotas para hoje e amanhã a partir desta data)
-          </span>
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <label className="text-sm font-medium text-gray-700">Data de Referência:</label>
+            <input
+              type="date"
+              value={filterData}
+              onChange={(e) => setFilterData(e.target.value)}
+              className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+            <span className="text-sm text-gray-600">
+              (Mostra rotas para hoje e amanhã a partir desta data)
+            </span>
+          </div>
+          <button
+            onClick={gerarRelatorioDebug}
+            className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition text-sm font-medium"
+            title="Gerar relatório de debug no console"
+          >
+            📋 Gerar Relatório Debug
+          </button>
         </div>
       </div>
 
@@ -482,18 +593,29 @@ export default function RotasAlocacao() {
                       <label className="block text-sm font-medium text-gray-700 mb-2">
                         Selecionar Motorista
                       </label>
-                      <select
-                        value={alocacao?.motoristaId || ''}
-                        onChange={(e) => handleAlocar(rota.id, e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      >
-                        <option value="">-- Selecione um motorista --</option>
-                        {motoristasElegiveis.map((motorista: any) => (
-                          <option key={motorista.id} value={motorista.id}>
-                            {motorista.nomeCompleto} - {getTipoVeiculoLabel(motorista.tipoVeiculo)}
-                          </option>
-                        ))}
-                      </select>
+                      <div className="flex gap-2">
+                        <select
+                          value={alocacao?.motoristaId || ''}
+                          onChange={(e) => handleAlocar(rota.id, e.target.value)}
+                          className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        >
+                          <option value="">-- Selecione um motorista --</option>
+                          {motoristasElegiveis.map((motorista: any) => (
+                            <option key={motorista.id} value={motorista.id}>
+                              {motorista.nomeCompleto} - {getTipoVeiculoLabel(motorista.tipoVeiculo)}
+                            </option>
+                          ))}
+                        </select>
+                        {alocacao && (
+                          <button
+                            onClick={() => handleDesalocar(rota.id)}
+                            className="flex-shrink-0 w-10 h-10 flex items-center justify-center bg-red-100 hover:bg-red-200 text-red-600 rounded-lg transition"
+                            title="Desalocar motorista"
+                          >
+                            <span className="text-lg font-bold">×</span>
+                          </button>
+                        )}
+                      </div>
                       {motoristasElegiveis.length === 0 && (
                         <div className="mt-2 text-xs text-red-600">
                           <p className="font-semibold">⚠️ Nenhum motorista elegível</p>
