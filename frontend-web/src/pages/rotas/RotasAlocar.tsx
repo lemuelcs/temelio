@@ -85,6 +85,75 @@ export default function RotasAlocacao() {
     setFilterData(toLocalDateInput(hoje));
   }, []);
 
+  // Gerar relatório de debug quando os dados mudarem
+  useEffect(() => {
+    if (rotas.length > 0 && motoristas.length > 0) {
+      // Aguardar um pouco para garantir que todos os logs foram processados
+      setTimeout(() => {
+        gerarRelatorioDebug();
+      }, 1000);
+    }
+  }, [rotas, motoristas, disponibilidades]);
+
+  // Função para gerar relatório de debug consolidado
+  const gerarRelatorioDebug = () => {
+    const relatorio = {
+      timestamp: new Date().toISOString(),
+      filtroData: filterData,
+      resumo: {
+        totalRotas: rotas.length,
+        totalMotoristas: motoristas.length,
+        totalDisponibilidades: disponibilidades.length,
+        totalAlocacoes: alocacoes.length,
+      },
+      rotas: rotas.map((r: any) => ({
+        id: r.id,
+        codigoRota: r.codigoRota,
+        dataRota: r.dataRota,
+        cicloRota: r.cicloRota,
+        tipoVeiculo: r.tipoVeiculo,
+        status: r.status,
+      })),
+      motoristas: motoristas.map((m: any) => ({
+        id: m.id,
+        nomeCompleto: m.nomeCompleto,
+        tipoVeiculo: m.tipoVeiculo,
+        status: m.status,
+      })),
+      disponibilidades: disponibilidades.map((d: any) => ({
+        motoristaId: d.motoristaId,
+        data: d.data,
+        ciclo: d.ciclo,
+        disponivel: d.disponivel,
+      })),
+      analiseElegibilidade: rotas.map((rota: any) => {
+        const elegiveis = getMotoristasPorRota(rota);
+        return {
+          rotaId: rota.id,
+          codigoRota: rota.codigoRota,
+          dataRota: rota.dataRota,
+          cicloRota: rota.cicloRota,
+          tipoVeiculo: rota.tipoVeiculo,
+          motoristasElegiveis: elegiveis.length,
+          motoristas: elegiveis.map((m: any) => ({
+            id: m.id,
+            nome: m.nomeCompleto,
+          })),
+        };
+      }),
+    };
+
+    console.log('\n\n═══════════════════════════════════════════════════════');
+    console.log('📋 RELATÓRIO DE DEBUG - ALOCAÇÃO DE ROTAS');
+    console.log('═══════════════════════════════════════════════════════\n');
+    console.log(JSON.stringify(relatorio, null, 2));
+    console.log('\n═══════════════════════════════════════════════════════');
+    console.log('💡 COPIE O JSON ACIMA E ENVIE PARA ANÁLISE');
+    console.log('═══════════════════════════════════════════════════════\n\n');
+
+    return relatorio;
+  };
+
   // Buscar rotas disponíveis
   const { data: rotas = [], isLoading: loadingRotas } = useQuery({
     queryKey: ['rotas-disponiveis', filterData],
@@ -214,35 +283,15 @@ export default function RotasAlocacao() {
 
   // Verificar se motorista tem disponibilidade para a rota
   const motoristaTemDisponibilidade = (motoristaId: string, dataRota: string, ciclo: string): boolean => {
-    console.log('  >> Verificando disponibilidade para motorista:', motoristaId);
-    console.log('  >> Data da rota:', dataRota);
-    console.log('  >> Ciclo da rota:', ciclo);
-
     const dataRotaObj = new Date(dataRota);
     if (Number.isNaN(dataRotaObj.getTime())) {
-      console.log('  >> ❌ Data da rota inválida');
       return false;
     }
 
     const dataRotaStr = dataRotaObj.toISOString().split('T')[0];
     const cicloNormalizado = normalizarCiclo(ciclo);
-    console.log('  >> Data normalizada:', dataRotaStr);
-    console.log('  >> Ciclo normalizado:', cicloNormalizado);
 
-    // Filtrar disponibilidades do motorista
-    const disponibilidadesMotorista = disponibilidades.filter((d: any) => d.motoristaId === motoristaId);
-    console.log('  >> Disponibilidades do motorista:', disponibilidadesMotorista.length);
-
-    if (disponibilidadesMotorista.length > 0) {
-      console.log('  >> Detalhes das disponibilidades:');
-      disponibilidadesMotorista.forEach((d: any) => {
-        const dataDispObj = new Date(d.data);
-        const dataDispStr = dataDispObj.toISOString().split('T')[0];
-        console.log('    - Data:', d.data, '→', dataDispStr, '| Ciclo:', d.ciclo, '→', normalizarCiclo(d.ciclo), '| Disponível:', d.disponivel);
-      });
-    }
-
-    const resultado = disponibilidades.some((d: any) => {
+    return disponibilidades.some((d: any) => {
       if (d.motoristaId !== motoristaId) {
         return false;
       }
@@ -261,77 +310,30 @@ export default function RotasAlocacao() {
         return d.disponivel !== false;
       }
 
-      const cicloDispNormalizado = normalizarCiclo(d.ciclo);
-      const match = cicloDispNormalizado === cicloNormalizado && d.disponivel !== false;
-
-      if (match) {
-        console.log('  >> ✅ Match encontrado!', { data: dataDisponibilidadeStr, ciclo: cicloDispNormalizado, disponivel: d.disponivel });
-      }
-
-      return match;
+      return normalizarCiclo(d.ciclo) === cicloNormalizado && d.disponivel !== false;
     });
-
-    console.log('  >> Resultado final:', resultado ? '✅ TEM' : '❌ NÃO TEM');
-    return resultado;
   };
 
   // Filtrar motoristas elegíveis para uma rota
   const getMotoristasPorRota = (rota: Rota): Motorista[] => {
-    // IDs dos motoristas já alocados
+    // IDs dos motoristas já alocados (apenas nesta sessão, não no banco)
     const motoristasAlocados = alocacoes.map((a) => a.motoristaId);
 
-    console.log('=== DEBUG getMotoristasPorRota ===');
-    console.log('Rota:', {
-      id: rota.id,
-      codigoRota: rota.codigoRota,
-      dataRota: rota.dataRota,
-      cicloRota: rota.cicloRota,
-      tipoVeiculo: rota.tipoVeiculo,
-    });
-    console.log('Total de motoristas:', motoristas.length);
-    console.log('Total de disponibilidades:', disponibilidades.length);
-
-    const resultado = motoristas.filter((m: any) => {
-      const motoristaDebug = {
-        id: m.id,
-        nome: m.nomeCompleto,
-        tipoVeiculo: m.tipoVeiculo,
-        status: m.status,
-      };
-
-      // Verificar se já foi alocado
-      if (motoristasAlocados.includes(m.id)) {
-        console.log('❌ Motorista já alocado:', motoristaDebug);
-        return false;
-      }
+    return motoristas.filter((m: any) => {
+      // Verificar se já foi alocado nesta sessão
+      if (motoristasAlocados.includes(m.id)) return false;
 
       // Verificar se o tipo de veículo é compatível
-      if (m.tipoVeiculo !== rota.tipoVeiculo) {
-        console.log('❌ Tipo de veículo incompatível:', motoristaDebug, 'esperado:', rota.tipoVeiculo);
-        return false;
-      }
+      if (m.tipoVeiculo !== rota.tipoVeiculo) return false;
 
       // Verificar se está ativo
-      if (m.status !== 'ATIVO') {
-        console.log('❌ Status não é ATIVO:', motoristaDebug);
-        return false;
-      }
+      if (m.status !== 'ATIVO') return false;
 
       // Verificar disponibilidade
-      const temDisponibilidade = motoristaTemDisponibilidade(m.id, rota.dataRota, rota.cicloRota);
-      if (!temDisponibilidade) {
-        console.log('❌ Sem disponibilidade:', motoristaDebug);
-        return false;
-      }
+      if (!motoristaTemDisponibilidade(m.id, rota.dataRota, rota.cicloRota)) return false;
 
-      console.log('✅ Motorista elegível:', motoristaDebug);
       return true;
     });
-
-    console.log('Total de motoristas elegíveis:', resultado.length);
-    console.log('=====================================\n');
-
-    return resultado;
   };
 
   // Alocar motorista a uma rota
@@ -350,6 +352,11 @@ export default function RotasAlocacao() {
       }
       return [...prev, { rotaId, motoristaId }];
     });
+  };
+
+  // Desalocar motorista de uma rota
+  const handleDesalocar = (rotaId: string) => {
+    setAlocacoes((prev) => prev.filter((a) => a.rotaId !== rotaId));
   };
 
   // Enviar ofertas
@@ -418,17 +425,26 @@ export default function RotasAlocacao() {
 
       {/* Filtro de Data */}
       <div className="bg-white rounded-lg shadow p-4">
-        <div className="flex items-center gap-4">
-          <label className="text-sm font-medium text-gray-700">Data de Referência:</label>
-          <input
-            type="date"
-            value={filterData}
-            onChange={(e) => setFilterData(e.target.value)}
-            className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          />
-          <span className="text-sm text-gray-600">
-            (Mostra rotas para hoje e amanhã a partir desta data)
-          </span>
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <label className="text-sm font-medium text-gray-700">Data de Referência:</label>
+            <input
+              type="date"
+              value={filterData}
+              onChange={(e) => setFilterData(e.target.value)}
+              className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+            <span className="text-sm text-gray-600">
+              (Mostra rotas para hoje e amanhã a partir desta data)
+            </span>
+          </div>
+          <button
+            onClick={gerarRelatorioDebug}
+            className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition text-sm font-medium"
+            title="Gerar relatório de debug no console"
+          >
+            📋 Gerar Relatório Debug
+          </button>
         </div>
       </div>
 
@@ -577,18 +593,29 @@ export default function RotasAlocacao() {
                       <label className="block text-sm font-medium text-gray-700 mb-2">
                         Selecionar Motorista
                       </label>
-                      <select
-                        value={alocacao?.motoristaId || ''}
-                        onChange={(e) => handleAlocar(rota.id, e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      >
-                        <option value="">-- Selecione um motorista --</option>
-                        {motoristasElegiveis.map((motorista: any) => (
-                          <option key={motorista.id} value={motorista.id}>
-                            {motorista.nomeCompleto} - {getTipoVeiculoLabel(motorista.tipoVeiculo)}
-                          </option>
-                        ))}
-                      </select>
+                      <div className="flex gap-2">
+                        <select
+                          value={alocacao?.motoristaId || ''}
+                          onChange={(e) => handleAlocar(rota.id, e.target.value)}
+                          className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        >
+                          <option value="">-- Selecione um motorista --</option>
+                          {motoristasElegiveis.map((motorista: any) => (
+                            <option key={motorista.id} value={motorista.id}>
+                              {motorista.nomeCompleto} - {getTipoVeiculoLabel(motorista.tipoVeiculo)}
+                            </option>
+                          ))}
+                        </select>
+                        {alocacao && (
+                          <button
+                            onClick={() => handleDesalocar(rota.id)}
+                            className="flex-shrink-0 w-10 h-10 flex items-center justify-center bg-red-100 hover:bg-red-200 text-red-600 rounded-lg transition"
+                            title="Desalocar motorista"
+                          >
+                            <span className="text-lg font-bold">×</span>
+                          </button>
+                        )}
+                      </div>
                       {motoristasElegiveis.length === 0 && (
                         <div className="mt-2 text-xs text-red-600">
                           <p className="font-semibold">⚠️ Nenhum motorista elegível</p>
