@@ -4,32 +4,33 @@ import { TipoVeiculo, TipoRota, CicloRota, StatusRota, StatusOferta, StatusTrack
 import prisma from '../config/database';
 import { AppError } from '../middlewares/error.middleware';
 
-class RotaController {
-  private async obterMotoristaIdPorUsuario(req: Request): Promise<string> {
-    const usuarioId = req.user?.id;
+const obterMotoristaIdPorUsuario = async (req: Request): Promise<string> => {
+  const usuarioId = req.user?.id;
 
-    if (!usuarioId) {
-      console.warn('[RotaController] Requisição sem usuário autenticado.');
-      throw new AppError('Usuário não autenticado', 401);
-    }
-
-    const motorista = await prisma.motorista.findFirst({
-      where: { usuarioId },
-      select: { id: true },
-    });
-
-    if (!motorista) {
-      console.warn('[RotaController] Nenhum motorista vinculado ao usuário', { usuarioId });
-      throw new AppError('Motorista não encontrado para este usuário', 404);
-    }
-
-    console.debug('[RotaController] Motorista associado encontrado', {
-      usuarioId,
-      motoristaId: motorista.id,
-    });
-
-    return motorista.id;
+  if (!usuarioId) {
+    console.warn('[RotaController] Requisição sem usuário autenticado.');
+    throw new AppError('Usuário não autenticado', 401);
   }
+
+  const motorista = await prisma.motorista.findFirst({
+    where: { usuarioId },
+    select: { id: true },
+  });
+
+  if (!motorista) {
+    console.warn('[RotaController] Nenhum motorista vinculado ao usuário', { usuarioId });
+    throw new AppError('Motorista não encontrado para este usuário', 404);
+  }
+
+  console.debug('[RotaController] Motorista associado encontrado', {
+    usuarioId,
+    motoristaId: motorista.id,
+  });
+
+  return motorista.id;
+};
+
+class RotaController {
 
   // ========================================
   // D-1: CRIAR OFERTA DE ROTA
@@ -182,7 +183,7 @@ class RotaController {
       };
 
       if (req.user?.perfil === 'MOTORISTA') {
-        filtros.motoristaId = await this.obterMotoristaIdPorUsuario(req);
+        filtros.motoristaId = await obterMotoristaIdPorUsuario(req);
         console.debug('[RotaController] Forçando filtro de motorista para usuário logado', {
           usuarioId: req.user?.id,
           motoristaId: filtros.motoristaId,
@@ -459,7 +460,7 @@ class RotaController {
 
   async listarOfertas(req: Request, res: Response) {
     try {
-      const motoristaId = await this.obterMotoristaIdPorUsuario(req);
+      const motoristaId = await obterMotoristaIdPorUsuario(req);
       console.debug('[RotaController] Listando ofertas para motorista', { motoristaId });
 
       const ofertas = await prisma.ofertaRota.findMany({
@@ -504,15 +505,15 @@ class RotaController {
   async aceitarOferta(req: Request, res: Response) {
     try {
       const { id } = req.params;
-      const motoristaId = await this.obterMotoristaIdPorUsuario(req);
+      const motoristaId = await obterMotoristaIdPorUsuario(req);
       console.debug('[RotaController] Motorista aceitando oferta', { ofertaId: id, motoristaId });
       const {
-        adicionouAgenda,
+        adicionouAgenda = false,
         latitude,
         longitude,
         dispositivo,
         ip
-      } = req.body;
+      } = req.body ?? {};
 
       // Buscar oferta
       const oferta = await prisma.ofertaRota.findUnique({
@@ -607,7 +608,7 @@ class RotaController {
   async recusarOferta(req: Request, res: Response) {
     try {
       const { id } = req.params;
-      const motoristaId = await this.obterMotoristaIdPorUsuario(req);
+      const motoristaId = await obterMotoristaIdPorUsuario(req);
       console.debug('[RotaController] Motorista recusando oferta', { ofertaId: id, motoristaId });
       const {
         motivo,
@@ -702,7 +703,7 @@ class RotaController {
   async atualizarTracking(req: Request, res: Response) {
     try {
       const { id } = req.params;
-      const motoristaId = await this.obterMotoristaIdPorUsuario(req);
+      const motoristaId = await obterMotoristaIdPorUsuario(req);
       console.debug('[RotaController] Atualizando tracking da rota', { rotaId: id, motoristaId });
       const {
         statusTracking,

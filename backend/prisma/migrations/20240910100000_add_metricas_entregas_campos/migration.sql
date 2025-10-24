@@ -1,0 +1,2 @@
+-- Migration intentionally left blank.
+-- Columns em metricas_entregas foram ajustados manualmente.

@@ -488,7 +488,6 @@ model MetricaEntrega {
   horarioChegada      DateTime?
   atrasouCarregamento Boolean   @default(false)
   minutosAtraso       Int?
-  insucessos          Int?
   satisfacaoMotorista String?   @db.VarChar(30)
   feedbackMotorista   String?   @db.Text
   horaInicioRota      DateTime?

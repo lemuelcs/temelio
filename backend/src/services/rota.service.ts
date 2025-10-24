@@ -879,14 +879,13 @@ class RotaService {
     },
   ) {
     const totalPacotes = Number(rota.qtdePacotes ?? 0);
-    const insucessos = Number(dados.insucessos ?? 0);
+    const pacotesRetornados = Number(dados.insucessos ?? 0);
     const quantidadePNOV = Number(dados.quantidadePNOV ?? 0);
-    const pacotesEntregues = Math.max(totalPacotes - insucessos - quantidadePNOV, 0);
-    const pacotesRetornados = insucessos;
+    const pacotesEntregues = Math.max(totalPacotes - pacotesRetornados - quantidadePNOV, 0);
     const pacotesPNOV = quantidadePNOV;
     const pacotesDNR = 0;
     const taxaDRCValor =
-      totalPacotes > 0 ? ((insucessos + quantidadePNOV) / totalPacotes) * 100 : 0;
+      totalPacotes > 0 ? ((pacotesRetornados + quantidadePNOV) / totalPacotes) * 100 : 0;
     const taxaDRC = new Prisma.Decimal(taxaDRCValor.toFixed(2));
 
     const dataReferencia = new Date(rota.dataRota);
@@ -916,7 +915,6 @@ class RotaService {
         horarioChegada: horaFim,
         atrasouCarregamento: false,
         minutosAtraso: null,
-        insucessos,
         satisfacaoMotorista: dados.satisfacaoMotorista || null,
         feedbackMotorista: dados.feedbackMotorista || null,
         horaInicioRota: horaInicio,
@@ -936,7 +934,6 @@ class RotaService {
         horarioChegada: horaFim,
         atrasouCarregamento: false,
         minutosAtraso: null,
-        insucessos,
         satisfacaoMotorista: dados.satisfacaoMotorista || null,
         feedbackMotorista: dados.feedbackMotorista || null,
         horaInicioRota: horaInicio,

@@ -80,6 +80,17 @@ export default function RotasConfirmar() {
     return timeString.substring(0, 5);
   };
 
+  const formatSelectedDate = (value: string) => {
+    if (!value) return '';
+    const partes = value.split('-').map(Number);
+    if (partes.length !== 3 || partes.some((parte) => Number.isNaN(parte))) {
+      return '';
+    }
+    const [ano, mes, dia] = partes;
+    const data = new Date(ano, mes - 1, dia);
+    return data.toLocaleDateString('pt-BR');
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -147,7 +158,7 @@ export default function RotasConfirmar() {
             <div>
               <p className="text-sm text-gray-600">Data Selecionada</p>
               <p className="text-lg font-bold text-blue-900">
-                {new Date(selectedDate).toLocaleDateString('pt-BR')}
+                {formatSelectedDate(selectedDate)}
               </p>
             </div>
           </div>

@@ -17,7 +17,7 @@ import {
 import api from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
 import type { Rota, OfertaRota, StatusTrackingMotorista } from '../../types';
-import { StatusTrackingMotoristaLabels } from '../../types';
+import { StatusTrackingMotoristaLabels, StatusRotaLabels } from '../../types';
 
 export default function RotasMotorista() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -64,15 +64,15 @@ export default function RotasMotorista() {
     enabled: !!user?.id,
   });
 
-  // Buscar rotas confirmadas do motorista (CONFIRMADA, EM_ANDAMENTO ou CONCLUIDA)
-  const { data: rotasConfirmadas = [], isLoading: loadingConfirmadas } = useQuery({
-    queryKey: ['rotas-confirmadas', user?.id],
+  // Buscar rotas relacionadas ao motorista (ACEITA, CONFIRMADA, EM_ANDAMENTO ou CONCLUIDA)
+  const { data: rotasAceitasOuConfirmadas = [], isLoading: loadingRotasMotorista } = useQuery({
+    queryKey: ['rotas-motorista', user?.id],
     queryFn: async () => {
       try {
         const response = await api.get('/rotas', {
           params: {
             motoristaId: user?.id,
-            status: ['CONFIRMADA', 'EM_ANDAMENTO', 'CONCLUIDA'],
+            status: ['ACEITA', 'CONFIRMADA', 'EM_ANDAMENTO', 'CONCLUIDA'],
           },
         });
         const dados = response.data?.data?.rotas || response.data?.rotas || response.data;
@@ -85,6 +85,11 @@ export default function RotasMotorista() {
     enabled: !!user?.id,
   });
 
+  const rotasAgendadas = rotasAceitasOuConfirmadas.filter((rota: Rota) => rota.status === 'ACEITA');
+  const rotasConfirmadas = rotasAceitasOuConfirmadas.filter((rota: Rota) =>
+    ['CONFIRMADA', 'EM_ANDAMENTO', 'CONCLUIDA'].includes(rota.status)
+  );
+
   // Mutation para aceitar oferta
   const aceitarOfertaMutation = useMutation({
     mutationFn: async (ofertaId: string) => {
@@ -92,7 +97,7 @@ export default function RotasMotorista() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['rotas-oferecidas'] });
-      queryClient.invalidateQueries({ queryKey: ['rotas-confirmadas'] });
+      queryClient.invalidateQueries({ queryKey: ['rotas-motorista'] });
     },
     onError: (error: any) => {
       alert(error.response?.data?.message || 'Erro ao aceitar oferta');
@@ -121,7 +126,7 @@ export default function RotasMotorista() {
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['rotas-confirmadas'] });
+      queryClient.invalidateQueries({ queryKey: ['rotas-motorista'] });
     },
     onError: (error: any) => {
       alert(error.response?.data?.message || 'Erro ao atualizar status');
@@ -205,6 +210,12 @@ export default function RotasMotorista() {
     }
   };
 
+  const normalizarDataUtcParaLocal = (valor: string) => {
+    const parsed = new Date(valor);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return new Date(parsed.getUTCFullYear(), parsed.getUTCMonth(), parsed.getUTCDate());
+  };
+
   const getDiaDaRota = (dataRota: string) => {
     const hoje = new Date();
     hoje.setHours(0, 0, 0, 0);
@@ -212,61 +223,94 @@ export default function RotasMotorista() {
     const amanha = new Date(hoje);
     amanha.setDate(amanha.getDate() + 1);
 
-    const dataRotaDate = new Date(dataRota);
-    dataRotaDate.setHours(0, 0, 0, 0);
-
-    if (dataRotaDate.getTime() === hoje.getTime()) {
-      return { texto: 'HOJE', classe: 'bg-red-100 text-red-800' };
-    } else if (dataRotaDate.getTime() === amanha.getTime()) {
-      return { texto: 'AMANHÃ', classe: 'bg-orange-100 text-orange-800' };
-    } else {
-      const diasSemana = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado'];
-      return { texto: diasSemana[dataRotaDate.getDay()], classe: 'bg-blue-100 text-blue-800' };
+    const dataReferencia = normalizarDataUtcParaLocal(dataRota);
+    const dataComparacao = dataReferencia ? new Date(dataReferencia) : null;
+    if (dataComparacao) {
+      dataComparacao.setHours(0, 0, 0, 0);
     }
+
+    const dataCompleta = dataReferencia
+      ? dataReferencia.toLocaleDateString('pt-BR', {
+          day: '2-digit',
+          month: 'long',
+          year: 'numeric',
+        })
+      : '';
+
+    if (dataComparacao && dataComparacao.getTime() === hoje.getTime()) {
+      return { texto: 'HOJE', classe: 'bg-red-100 text-red-800', dataCompleta };
+    }
+
+    if (dataComparacao && dataComparacao.getTime() === amanha.getTime()) {
+      return { texto: 'AMANHÃ', classe: 'bg-orange-100 text-orange-800', dataCompleta };
+    }
+
+    if (dataComparacao) {
+      const diasSemana = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado'];
+      return { texto: diasSemana[dataComparacao.getDay()], classe: 'bg-blue-100 text-blue-800', dataCompleta };
+    }
+
+    return { texto: 'Data indisponível', classe: 'bg-gray-100 text-gray-800', dataCompleta };
   };
 
-const calcularHorarioColeta = (horaInicio: string) => {
-  if (!horaInicio) return '';
-  const [hora, minuto] = horaInicio.split(':').map(Number);
-  const totalMinutos = hora * 60 + minuto - 45;
-  const novaHora = Math.floor(totalMinutos / 60);
-  const novoMinuto = totalMinutos % 60;
-  return `${String(novaHora).padStart(2, '0')}:${String(novoMinuto).padStart(2, '0')}`;
-};
+  const calcularHorarioColeta = (horaInicio?: string | null) => {
+    if (!horaInicio) return '';
 
-const formatHoraRota = (valor?: string | null) => {
-  if (!valor) return '';
-  const parsed = new Date(valor);
-  if (!Number.isNaN(parsed.getTime())) {
-    return parsed.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-  }
+    const formatoHorarioSimples = /^(\d{2}):(\d{2})/;
+    let referencia: Date | null = null;
 
-  if (typeof valor === 'string' && valor.includes(':')) {
-    return valor.substring(0, 5);
-  }
+    const correspondenciaSimples = formatoHorarioSimples.exec(horaInicio);
+    if (correspondenciaSimples) {
+      const hora = Number(correspondenciaSimples[1]);
+      const minuto = Number(correspondenciaSimples[2]);
+      referencia = new Date();
+      referencia.setHours(hora, minuto, 0, 0);
+    } else {
+      const parsed = new Date(horaInicio);
+      if (!Number.isNaN(parsed.getTime())) {
+        referencia = parsed;
+      }
+    }
 
-  return '';
-};
+    if (!referencia) return '';
 
-const calcularValorEstimado = (rota: Rota) => {
-  if (rota.valorProjetado !== undefined && rota.valorProjetado !== null) {
-    return Number(rota.valorProjetado).toFixed(2);
-  }
+    const dataColeta = new Date(referencia.getTime() - 45 * 60 * 1000);
+    return dataColeta.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  };
 
-  const valorHora = rota.valorHora ?? 0;
-  const horas = rota.tamanhoHoras ?? rota.horasEstimadas ?? 0;
-  return Number(valorHora * horas).toFixed(2);
-};
+  const formatHoraRota = (valor?: string | null) => {
+    if (!valor) return '';
+    const parsed = new Date(valor);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    }
 
-const obterDuracaoHoras = (rota: Rota) => rota.tamanhoHoras ?? rota.horasEstimadas ?? 0;
+    if (typeof valor === 'string' && valor.includes(':')) {
+      return valor.substring(0, 5);
+    }
 
-const trackingBadgeClasses: Record<StatusTrackingMotorista, string> = {
-  AGUARDANDO: 'bg-gray-100 text-gray-700 border border-gray-200',
-  A_CAMINHO: 'bg-orange-100 text-orange-800 border border-orange-200',
-  NO_LOCAL: 'bg-blue-100 text-blue-800 border border-blue-200',
-  ROTA_INICIADA: 'bg-purple-100 text-purple-800 border border-purple-200',
-  ROTA_CONCLUIDA: 'bg-green-100 text-green-800 border border-green-200',
-};
+    return '';
+  };
+
+  const calcularValorEstimado = (rota: Rota) => {
+    if (rota.valorProjetado !== undefined && rota.valorProjetado !== null) {
+      return Number(rota.valorProjetado).toFixed(2);
+    }
+
+    const valorHora = rota.valorHora ?? 0;
+    const horas = rota.tamanhoHoras ?? rota.horasEstimadas ?? 0;
+    return Number(valorHora * horas).toFixed(2);
+  };
+
+  const obterDuracaoHoras = (rota: Rota) => rota.tamanhoHoras ?? rota.horasEstimadas ?? 0;
+
+  const trackingBadgeClasses: Record<StatusTrackingMotorista, string> = {
+    AGUARDANDO: 'bg-gray-100 text-gray-700 border border-gray-200',
+    A_CAMINHO: 'bg-orange-100 text-orange-800 border border-orange-200',
+    NO_LOCAL: 'bg-blue-100 text-blue-800 border border-blue-200',
+    ROTA_INICIADA: 'bg-purple-100 text-purple-800 border border-purple-200',
+    ROTA_CONCLUIDA: 'bg-green-100 text-green-800 border border-green-200',
+  };
 
   return (
     <>
@@ -279,12 +323,12 @@ const trackingBadgeClasses: Record<StatusTrackingMotorista, string> = {
         </p>
       </div>
 
-      {/* Rotas Oferecidas (D-1) */}
+      {/* Rotas Ofertadas */}
       <div className="bg-white rounded-lg shadow-md">
         <div className="p-4 border-b border-gray-200">
           <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
             <Calendar className="w-5 h-5 text-blue-600" />
-            Rotas Oferecidas (D-1)
+            Rotas Ofertadas
           </h2>
           <p className="text-sm text-gray-600 mt-1">
             Aceite ou recuse as rotas oferecidas para você
@@ -306,8 +350,9 @@ const trackingBadgeClasses: Record<StatusTrackingMotorista, string> = {
             rotasOferecidas.map((oferta: OfertaRota) => {
               const rota = oferta.rota!;
               const dia = getDiaDaRota(rota.dataRota);
-              const horarioColeta = calcularHorarioColeta(rota.horaInicio || '');
+              const horarioColeta = calcularHorarioColeta(rota.horaInicio);
               const valorEstimado = calcularValorEstimado(rota);
+              const tituloRota = rota.descricao || rota.codigoRota || 'Rota sem nome';
               const origem: any = (rota as any).localOrigem || (rota as any).local;
               const nomeOrigem = origem?.nome || 'Local não informado';
               const enderecoOrigem = origem
@@ -320,9 +365,12 @@ const trackingBadgeClasses: Record<StatusTrackingMotorista, string> = {
                 <div key={oferta.id} className="p-4 hover:bg-gray-50">
                   {/* Dia da Rota em Destaque */}
                   <div className="flex items-center justify-between mb-3">
-                    <span className={`px-4 py-2 rounded-lg font-bold text-lg ${dia.classe}`}>
-                      {dia.texto}
-                    </span>
+                    <div className={`px-4 py-2 rounded-lg ${dia.classe}`}>
+                      <span className="block text-lg font-bold">{dia.texto}</span>
+                      {dia.dataCompleta && (
+                        <span className="block text-xs font-medium opacity-80">{dia.dataCompleta}</span>
+                      )}
+                    </div>
                     {rota.tipoRota === 'RESGATE' && (
                       <span className="px-3 py-1 bg-purple-100 text-purple-800 text-sm font-semibold rounded-full flex items-center gap-1">
                         <AlertTriangle className="w-4 h-4" />
@@ -395,12 +443,116 @@ const trackingBadgeClasses: Record<StatusTrackingMotorista, string> = {
         </div>
       </div>
 
-      {/* Rotas Confirmadas (D+0) */}
+      {/* Rotas Agendadas */}
+      <div className="bg-white rounded-lg shadow-md">
+        <div className="p-4 border-b border-gray-200">
+          <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+            <Calendar className="w-5 h-5 text-amber-600" />
+            Rotas Agendadas
+          </h2>
+          <p className="text-sm text-gray-600 mt-1">
+            Rotas aceitas aguardando confirmação da Amazon
+          </p>
+        </div>
+
+        <div className="divide-y divide-gray-200">
+          {loadingRotasMotorista ? (
+            <div className="p-8 text-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-amber-600 mx-auto"></div>
+              <p className="mt-4 text-gray-600">Carregando...</p>
+            </div>
+          ) : rotasAgendadas.length === 0 ? (
+            <div className="p-8 text-center">
+              <Calendar className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+              <p className="text-gray-600">Nenhuma rota agendada no momento</p>
+            </div>
+          ) : (
+            rotasAgendadas.map((rota: Rota) => {
+              const dia = getDiaDaRota(rota.dataRota);
+              const horarioColeta = calcularHorarioColeta(rota.horaInicio);
+              const valorEstimado = calcularValorEstimado(rota);
+              const localOrigem: any = (rota as any).localOrigem || (rota as any).local;
+              const nomeLocalOrigem = localOrigem?.nome || 'Local não informado';
+              const enderecoLocalOrigem = localOrigem
+                ? `${localOrigem.endereco || ''}${localOrigem.cidade ? `, ${localOrigem.cidade}` : ''}${
+                    localOrigem.estado ? ` - ${localOrigem.estado}` : ''
+                  }`
+                : 'Endereço não informado';
+              const tituloRota = rota.descricao || rota.codigoRota || 'Rota sem nome';
+
+              return (
+                <div key={rota.id} className="p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className={`px-4 py-2 rounded-lg ${dia.classe}`}>
+                      <span className="block text-lg font-bold">{dia.texto}</span>
+                      {dia.dataCompleta && (
+                        <span className="block text-xs font-medium opacity-80">{dia.dataCompleta}</span>
+                      )}
+                    </div>
+                    <span className="px-3 py-1 rounded-lg text-xs font-semibold bg-amber-100 text-amber-800 border border-amber-200">
+                      {StatusRotaLabels[rota.status] || 'Agendada'}
+                    </span>
+                  </div>
+
+                  <div className="mb-3">
+                    <p className="text-sm font-semibold text-gray-900">{tituloRota}</p>
+                    <p className="text-xs text-gray-500">Paradas: {rota.qtdeParadas ?? 'N/A'}</p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 mb-3">
+                    <div>
+                      <p className="text-xs text-gray-500">Horário para coletar</p>
+                      <p className="font-bold text-green-700 text-lg flex items-center gap-1">
+                        <Clock className="w-4 h-4" />
+                        {horarioColeta}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Horário de início</p>
+                      <p className="font-semibold text-gray-900 text-lg flex items-center gap-1">
+                        <Clock className="w-4 h-4" />
+                        {formatHoraRota(rota.horaInicio)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Tamanho da rota</p>
+                      <p className="font-semibold text-gray-900">{obterDuracaoHoras(rota)}h</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Local de origem</p>
+                      <p className="font-semibold text-gray-900">{nomeLocalOrigem}</p>
+                      {enderecoLocalOrigem && (
+                        <p className="text-xs text-gray-500">{enderecoLocalOrigem}</p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+                      <p className="text-xs text-gray-600 mb-1">Projeção de valor</p>
+                      <p className="text-2xl font-bold text-green-700 flex items-center gap-2">
+                        <DollarSign className="w-6 h-6" />
+                        R$ {valorEstimado}
+                      </p>
+                    </div>
+                    <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg">
+                      <p className="text-xs text-gray-600 mb-1">Status da rota</p>
+                      <p className="font-semibold text-gray-900">{StatusRotaLabels[rota.status] || rota.status}</p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+
+      {/* Rotas Confirmadas */}
       <div className="bg-white rounded-lg shadow-md">
         <div className="p-4 border-b border-gray-200">
           <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
             <Truck className="w-5 h-5 text-green-600" />
-            Rotas Confirmadas (D+0)
+            Rotas Confirmadas
           </h2>
           <p className="text-sm text-gray-600 mt-1">
             Suas rotas confirmadas pela Amazon
@@ -408,7 +560,7 @@ const trackingBadgeClasses: Record<StatusTrackingMotorista, string> = {
         </div>
 
         <div className="divide-y divide-gray-200">
-          {loadingConfirmadas ? (
+          {loadingRotasMotorista ? (
             <div className="p-8 text-center">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600 mx-auto"></div>
               <p className="mt-4 text-gray-600">Carregando...</p>
@@ -421,8 +573,9 @@ const trackingBadgeClasses: Record<StatusTrackingMotorista, string> = {
           ) : (
             rotasConfirmadas.map((rota: Rota) => {
               const dia = getDiaDaRota(rota.dataRota);
-              const horarioColeta = calcularHorarioColeta(rota.horaInicio || '');
+              const horarioColeta = calcularHorarioColeta(rota.horaInicio);
               const valorEstimado = calcularValorEstimado(rota);
+              const tituloRota = rota.descricao || rota.codigoRota || 'Rota sem nome';
               const isExpanded = expandedId === rota.id;
               const statusTracking = (rota.statusTracking as StatusTrackingMotorista) || 'AGUARDANDO';
               const podeIr = statusTracking === 'AGUARDANDO';
@@ -447,19 +600,22 @@ const trackingBadgeClasses: Record<StatusTrackingMotorista, string> = {
                     onClick={() => setExpandedId(isExpanded ? null : rota.id)}
                     className="cursor-pointer hover:bg-gray-50 -m-4 p-4 rounded-lg"
                   >
-                  <div className="flex items-center justify-between mb-3">
-                    <span className={`px-4 py-2 rounded-lg font-bold text-lg ${dia.classe}`}>
-                      {dia.texto}
-                    </span>
-                    <div className="flex items-center gap-2">
-                      <span className={`px-3 py-1 rounded-lg text-xs font-semibold ${statusBadgeClass}`}>
-                        {statusTrackingLabel}
-                      </span>
-                      {rota.tipoRota === 'RESGATE' && (
-                        <span className="px-3 py-1 bg-purple-100 text-purple-800 text-sm font-semibold rounded-full flex items-center gap-1">
-                          <AlertTriangle className="w-4 h-4" />
-                          RESGATE
+                    <div className="flex items-center justify-between mb-3">
+                      <div className={`px-4 py-2 rounded-lg ${dia.classe}`}>
+                        <span className="block text-lg font-bold">{dia.texto}</span>
+                        {dia.dataCompleta && (
+                          <span className="block text-xs font-medium opacity-80">{dia.dataCompleta}</span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className={`px-3 py-1 rounded-lg text-xs font-semibold ${statusBadgeClass}`}>
+                          {statusTrackingLabel}
                         </span>
+                        {rota.tipoRota === 'RESGATE' && (
+                          <span className="px-3 py-1 bg-purple-100 text-purple-800 text-sm font-semibold rounded-full flex items-center gap-1">
+                            <AlertTriangle className="w-4 h-4" />
+                            RESGATE
+                          </span>
                         )}
                         {isExpanded ? (
                           <ChevronUp className="w-5 h-5 text-gray-400" />
@@ -467,6 +623,11 @@ const trackingBadgeClasses: Record<StatusTrackingMotorista, string> = {
                           <ChevronDown className="w-5 h-5 text-gray-400" />
                         )}
                       </div>
+                    </div>
+
+                    <div className="mb-3">
+                      <p className="text-sm font-semibold text-gray-900">{tituloRota}</p>
+                      <p className="text-xs text-gray-500">Paradas: {rota.qtdeParadas ?? 'N/A'}</p>
                     </div>
 
                     <div className="grid grid-cols-2 gap-3 mb-3">
