@@ -2,8 +2,28 @@ import { Request, Response } from 'express';
 import rotaService from '../services/rota.service';
 import { TipoVeiculo, TipoRota, CicloRota, StatusRota, StatusOferta, StatusTracking } from '@prisma/client';
 import prisma from '../config/database';
+import { AppError } from '../middlewares/error.middleware';
 
 class RotaController {
+  private async obterMotoristaIdPorUsuario(req: Request): Promise<string> {
+    const usuarioId = req.user?.id;
+
+    if (!usuarioId) {
+      throw new AppError('Usuário não autenticado', 401);
+    }
+
+    const motorista = await prisma.motorista.findFirst({
+      where: { usuarioId },
+      select: { id: true },
+    });
+
+    if (!motorista) {
+      throw new AppError('Motorista não encontrado para este usuário', 404);
+    }
+
+    return motorista.id;
+  }
+
   // ========================================
   // D-1: CRIAR OFERTA DE ROTA
   // ========================================
@@ -125,6 +145,10 @@ class RotaController {
         dataFim: req.query.dataFim as string,
         motoristaId: req.query.motoristaId as string,
       };
+
+      if (req.user?.perfil === 'MOTORISTA') {
+        filtros.motoristaId = await this.obterMotoristaIdPorUsuario(req);
+      }
 
       const rotas = await rotaService.listar(filtros);
 
@@ -338,14 +362,7 @@ class RotaController {
 
   async listarOfertas(req: Request, res: Response) {
     try {
-      const motoristaId = req.user?.id;
-
-      if (!motoristaId) {
-        return res.status(401).json({
-          status: 'error',
-          message: 'Usuário não autenticado'
-        });
-      }
+      const motoristaId = await this.obterMotoristaIdPorUsuario(req);
 
       const ofertas = await prisma.ofertaRota.findMany({
         where: {
@@ -373,7 +390,8 @@ class RotaController {
         }
       });
     } catch (error: any) {
-      return res.status(500).json({
+      const status = error instanceof AppError ? error.statusCode : 500;
+      return res.status(status).json({
         status: 'error',
         message: error.message || 'Erro ao listar ofertas'
       });
@@ -387,7 +405,7 @@ class RotaController {
   async aceitarOferta(req: Request, res: Response) {
     try {
       const { id } = req.params;
-      const motoristaId = req.user?.id;
+      const motoristaId = await this.obterMotoristaIdPorUsuario(req);
       const {
         adicionouAgenda,
         latitude,
@@ -395,13 +413,6 @@ class RotaController {
         dispositivo,
         ip
       } = req.body;
-
-      if (!motoristaId) {
-        return res.status(401).json({
-          status: 'error',
-          message: 'Usuário não autenticado'
-        });
-      }
 
       // Buscar oferta
       const oferta = await prisma.ofertaRota.findUnique({
@@ -473,7 +484,8 @@ class RotaController {
         data: ofertaAtualizada
       });
     } catch (error: any) {
-      return res.status(500).json({
+      const status = error instanceof AppError ? error.statusCode : 500;
+      return res.status(status).json({
         status: 'error',
         message: error.message || 'Erro ao aceitar oferta'
       });
@@ -487,7 +499,7 @@ class RotaController {
   async recusarOferta(req: Request, res: Response) {
     try {
       const { id } = req.params;
-      const motoristaId = req.user?.id;
+      const motoristaId = await this.obterMotoristaIdPorUsuario(req);
       const {
         motivo,
         latitude,
@@ -495,13 +507,6 @@ class RotaController {
         dispositivo,
         ip
       } = req.body;
-
-      if (!motoristaId) {
-        return res.status(401).json({
-          status: 'error',
-          message: 'Usuário não autenticado'
-        });
-      }
 
       if (!motivo) {
         return res.status(400).json({
@@ -562,7 +567,8 @@ class RotaController {
         data: ofertaAtualizada
       });
     } catch (error: any) {
-      return res.status(500).json({
+      const status = error instanceof AppError ? error.statusCode : 500;
+      return res.status(status).json({
         status: 'error',
         message: error.message || 'Erro ao recusar oferta'
       });
@@ -576,15 +582,8 @@ class RotaController {
   async atualizarTracking(req: Request, res: Response) {
     try {
       const { id } = req.params;
-      const motoristaId = req.user?.id;
+      const motoristaId = await this.obterMotoristaIdPorUsuario(req);
       const { statusTracking, latitude, longitude, observacao } = req.body;
-
-      if (!motoristaId) {
-        return res.status(401).json({
-          status: 'error',
-          message: 'Usuário não autenticado'
-        });
-      }
 
       if (!statusTracking) {
         return res.status(400).json({
@@ -649,7 +648,8 @@ class RotaController {
         data: rotaAtualizada
       });
     } catch (error: any) {
-      return res.status(500).json({
+      const status = error instanceof AppError ? error.statusCode : 500;
+      return res.status(status).json({
         status: 'error',
         message: error.message || 'Erro ao atualizar tracking'
       });
