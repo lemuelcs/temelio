@@ -636,14 +636,6 @@ function RotaModal({
 }) {
   const queryClient = useQueryClient();
   const isEditing = !!rotaId;
-  const resgatePosition = useMemo<[number, number] | null>(() => {
-    const lat = parseNumberOrNull(formData.latitudeOrigem);
-    const lng = parseNumberOrNull(formData.longitudeOrigem);
-    if (lat === null || lng === null) {
-      return null;
-    }
-    return [lat, lng];
-  }, [formData.latitudeOrigem, formData.longitudeOrigem]);
 
   const findTabelaInfo = (tipoVeiculo: string, veiculoTransportadora: boolean) => {
     if (!tabelaPrecos) {
@@ -708,6 +700,15 @@ function RotaModal({
     qtdeLocais: '',
     qtdePacotes: '',
   });
+
+  const resgatePosition = useMemo<[number, number] | null>(() => {
+    const lat = parseNumberOrNull(formData.latitudeOrigem);
+    const lng = parseNumberOrNull(formData.longitudeOrigem);
+    if (lat === null || lng === null) {
+      return null;
+    }
+    return [lat, lng];
+  }, [formData.latitudeOrigem, formData.longitudeOrigem]);
 
   const [valorCalculado, setValorCalculado] = useState({
     valorHora: 0,

@@ -101,6 +101,9 @@ export function TabelaResumo({ resumo, datas, onClickCelula }: TabelaResumoProps
                   const valores = resumo.ciclos[ciclo.key][veiculo.key];
                   const total = calcularTotal(valores);
 
+                  // Ocultar linhas com total zero (sem disponibilidade na semana)
+                  if (total === 0) return null;
+
                   return (
                     <tr
                       key={`${ciclo.key}-${veiculo.key}`}
