@@ -57,7 +57,7 @@ class AlertaService {
     // 1. Verificar idade do veículo
     if (motorista.anoFabricacaoVeiculo) {
       const idadeVeiculo = anoAtual - motorista.anoFabricacaoVeiculo;
-      
+
       if (idadeVeiculo > 15) {
         const alerta = await this.criarAlerta({
           tipo: 'VEICULO_IDADE_EXCEDIDA',
@@ -65,6 +65,15 @@ class AlertaService {
           titulo: 'Veículo com mais de 15 anos',
           descricao: `Veículo fabricado em ${motorista.anoFabricacaoVeiculo} possui ${idadeVeiculo} anos. Limite máximo: 15 anos.`,
           severidade: 'CRITICA'
+        });
+        alertas.push(alerta);
+      } else if (idadeVeiculo === 15) {
+        const alerta = await this.criarAlerta({
+          tipo: 'VEICULO_IDADE_LIMITE',
+          motoristaId,
+          titulo: 'Veículo atingiu limite de idade',
+          descricao: `Veículo fabricado em ${motorista.anoFabricacaoVeiculo} possui ${idadeVeiculo} anos. Limite permitido: 15 anos.`,
+          severidade: 'ALTA'
         });
         alertas.push(alerta);
       } else if (idadeVeiculo >= 14) {
@@ -165,7 +174,7 @@ class AlertaService {
             severidade: 'CRITICA'
           });
           alertas.push(alerta);
-        } else if (diasParaVencer <= 15) {
+        } else if (diasParaVencer <= 30) {
           const alerta = await this.criarAlerta({
             tipo: 'BRK_VENCENDO',
             motoristaId,

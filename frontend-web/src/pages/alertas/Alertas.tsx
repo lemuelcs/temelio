@@ -1,10 +1,11 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { AxiosError } from 'axios';
-import { AlertTriangle, Calendar, CheckCircle, FileText, RefreshCw, User, XCircle } from 'lucide-react';
+import { AlertTriangle, Calendar, Car, CheckCircle, FileText, FileWarning, RefreshCw, ShieldAlert, User, XCircle } from 'lucide-react';
 import api from '../../services/api';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { useNavigate } from 'react-router-dom';
 
 type Severidade = 'CRITICA' | 'ALTA' | 'MEDIA' | 'BAIXA';
 
@@ -98,8 +99,22 @@ const getErrorMessage = (err: unknown): string => {
 };
 
 export default function Alertas() {
+  const navigate = useNavigate();
+  const generationPromiseRef = useRef<Promise<void> | null>(null);
   const [filterSeverity, setFilterSeverity] = useState('');
   const [filterTipo, setFilterTipo] = useState('');
+  const ensureAlertasGerados = async () => {
+    if (!generationPromiseRef.current) {
+      generationPromiseRef.current = api.post('/alertas/gerar').then(
+        () => {},
+        (err) => {
+          generationPromiseRef.current = null;
+          throw err;
+        }
+      );
+    }
+    return generationPromiseRef.current;
+  };
 
   const {
     data: dashboard,
@@ -108,6 +123,7 @@ export default function Alertas() {
   } = useQuery<DashboardCompliance | undefined>({
     queryKey: ['alertas-dashboard'],
     queryFn: async () => {
+      await ensureAlertasGerados();
       const response = await api.get('/alertas/dashboard/compliance');
       return response.data?.data;
     },
@@ -122,6 +138,7 @@ export default function Alertas() {
   } = useQuery<AlertRecord[]>({
     queryKey: ['alertas-list'],
     queryFn: async () => {
+      await ensureAlertasGerados();
       const response = await api.get('/alertas', { params: { resolvido: false } });
       const dados = response.data?.data?.alertas || response.data?.alertas || [];
       return Array.isArray(dados) ? dados : [];
@@ -131,21 +148,129 @@ export default function Alertas() {
   const loading = isLoading || loadingDashboard;
   const hasError = error || dashboardError;
 
+  const alertGroups = useMemo(() => {
+    const groupMotoristas = (tipos: string[]) => {
+      const matchedAlertas = alertas.filter((alerta) => tipos.includes(alerta.tipo));
+      const motoristaMap = new Map<string, { id: string; nome: string }>();
+
+      matchedAlertas.forEach((alerta) => {
+        if (alerta.motorista) {
+          motoristaMap.set(alerta.motorista.id, {
+            id: alerta.motorista.id,
+            nome: alerta.motorista.nomeCompleto,
+          });
+        }
+      });
+
+      return {
+        alertCount: matchedAlertas.length,
+        motoristas: Array.from(motoristaMap.values()).sort((a, b) => a.nome.localeCompare(b.nome)),
+        motoristaIds: Array.from(motoristaMap.keys()),
+      };
+    };
+
+    const motoristasComAlertasMap = new Map<string, { id: string; nome: string }>();
+
+    alertas.forEach((alerta) => {
+      if (alerta.motorista) {
+        motoristasComAlertasMap.set(alerta.motorista.id, {
+          id: alerta.motorista.id,
+          nome: alerta.motorista.nomeCompleto,
+        });
+      }
+    });
+
+    return {
+      cnh: groupMotoristas(['CNH_VENCIDA', 'CNH_VENCENDO']),
+      brk: groupMotoristas(['BRK_VENCIDO', 'BRK_VENCENDO']),
+      contrato: groupMotoristas(['CONTRATO_INATIVO']),
+      idadeVeiculo: groupMotoristas(['VEICULO_IDADE_LIMITE']),
+      docsVencendo: groupMotoristas(tiposDocsVencendo),
+      motoristasComAlertas: {
+        motoristas: Array.from(motoristasComAlertasMap.values()).sort((a, b) => a.nome.localeCompare(b.nome)),
+        motoristaIds: Array.from(motoristasComAlertasMap.keys()),
+      },
+    };
+  }, [alertas]);
+
   const stats = useMemo(() => {
     const totalMotoristas = dashboard?.totalMotoristas ?? 0;
-    const motoristasComAlerta = dashboard?.motoristasComAlerta ?? new Set(
-      alertas.map((alerta) => alerta.motorista?.id).filter(Boolean)
-    ).size;
-    const cnhVencida = alertas.filter((alerta) => alerta.tipo === 'CNH_VENCIDA').length;
-    const docsVencendo = alertas.filter((alerta) => tiposDocsVencendo.includes(alerta.tipo)).length;
+    const motoristasComAlerta =
+      dashboard?.motoristasComAlerta ?? alertGroups.motoristasComAlertas.motoristas.length;
 
     return {
       totalMotoristas,
       motoristasComAlerta,
-      cnhVencida,
-      docsVencendo,
+      cnhVencidaOuVencendo: alertGroups.cnh.motoristas.length,
+      brkVencendo: alertGroups.brk.motoristas.length,
+      contratosPendentes: alertGroups.contrato.motoristas.length,
+      idadeVeiculoLimite: alertGroups.idadeVeiculo.motoristas.length,
+      docsVencendo: alertGroups.docsVencendo.motoristas.length,
     };
-  }, [dashboard, alertas]);
+  }, [dashboard, alertGroups]);
+
+  const alertTiles = useMemo(
+    () => [
+      {
+        key: 'totalMotoristas',
+        title: 'Total de Motoristas',
+        count: stats.totalMotoristas,
+        icon: <User className="w-8 h-8 text-blue-500" />,
+        motoristas: [],
+        motoristaIds: [] as string[],
+      },
+      {
+        key: 'motoristasAlertas',
+        title: 'Motoristas com Alertas',
+        count: stats.motoristasComAlerta,
+        icon: <XCircle className="w-8 h-8 text-red-500" />,
+        motoristas: alertGroups.motoristasComAlertas.motoristas,
+        motoristaIds: alertGroups.motoristasComAlertas.motoristaIds,
+      },
+      {
+        key: 'cnh',
+        title: 'CNH vencida ou vencendo (30 dias)',
+        count: stats.cnhVencidaOuVencendo,
+        icon: <AlertTriangle className="w-8 h-8 text-red-500" />,
+        motoristas: alertGroups.cnh.motoristas,
+        motoristaIds: alertGroups.cnh.motoristaIds,
+      },
+      {
+        key: 'brk',
+        title: 'BRK vencida ou vencendo (30 dias)',
+        count: stats.brkVencendo,
+        icon: <ShieldAlert className="w-8 h-8 text-orange-500" />,
+        motoristas: alertGroups.brk.motoristas,
+        motoristaIds: alertGroups.brk.motoristaIds,
+      },
+      {
+        key: 'contrato',
+        title: 'Contrato pendente',
+        count: stats.contratosPendentes,
+        icon: <FileWarning className="w-8 h-8 text-amber-500" />,
+        motoristas: alertGroups.contrato.motoristas,
+        motoristaIds: alertGroups.contrato.motoristaIds,
+      },
+      {
+        key: 'idadeVeiculo',
+        title: 'Idade veículo (15 anos)',
+        count: stats.idadeVeiculoLimite,
+        icon: <Car className="w-8 h-8 text-green-500" />,
+        motoristas: alertGroups.idadeVeiculo.motoristas,
+        motoristaIds: alertGroups.idadeVeiculo.motoristaIds,
+      },
+      {
+        key: 'docsVencendo',
+        title: 'Docs vencendo',
+        count: stats.docsVencendo,
+        icon: <FileText className="w-8 h-8 text-orange-500" />,
+        motoristas: alertGroups.docsVencendo.motoristas,
+        motoristaIds: alertGroups.docsVencendo.motoristaIds,
+      },
+    ],
+    [stats, alertGroups]
+  );
+  const [hoveredTile, setHoveredTile] = useState<string | null>(null);
 
   const alertasPorMotorista = useMemo<MotoristaAlertas[]>(() => {
     const mapa = new Map<string, MotoristaAlertas>();
@@ -224,46 +349,79 @@ export default function Alertas() {
         <p className="text-gray-600 mt-1">Acompanhe pendências de documentos e elegibilidade</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white rounded-lg shadow p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-600">Total de Motoristas</p>
-              <p className="text-2xl font-bold text-gray-900 mt-1">{stats.totalMotoristas}</p>
-            </div>
-            <User className="w-8 h-8 text-blue-500" />
-          </div>
-        </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {alertTiles.map((tile) => {
+          const clickable = tile.motoristaIds.length > 0;
+          return (
+            <div
+              key={tile.key}
+              className={`relative bg-white rounded-lg shadow p-4 transition border ${
+                clickable ? 'cursor-pointer border-transparent hover:border-blue-400' : 'border-transparent'
+              }`}
+              role={clickable ? 'button' : undefined}
+              tabIndex={clickable ? 0 : -1}
+              onClick={() => {
+                if (clickable) {
+                  navigate('/motoristas', {
+                    state: { alertFilter: { ids: tile.motoristaIds, label: tile.title } },
+                  });
+                }
+              }}
+              onKeyDown={(event) => {
+                if (clickable && (event.key === 'Enter' || event.key === ' ')) {
+                  event.preventDefault();
+                  navigate('/motoristas', {
+                    state: { alertFilter: { ids: tile.motoristaIds, label: tile.title } },
+                  });
+                }
+              }}
+              onMouseEnter={() => {
+                if (tile.motoristas.length > 0) {
+                  setHoveredTile(tile.key);
+                }
+              }}
+              onMouseLeave={() => {
+                setHoveredTile((current) => (current === tile.key ? null : current));
+              }}
+              onFocus={() => {
+                if (tile.motoristas.length > 0) {
+                  setHoveredTile(tile.key);
+                }
+              }}
+              onBlur={() => {
+                setHoveredTile((current) => (current === tile.key ? null : current));
+              }}
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-600">{tile.title}</p>
+                  <p
+                    className={`text-2xl font-bold mt-1 ${
+                      tile.count > 0 ? 'text-gray-900' : 'text-gray-500'
+                    }`}
+                  >
+                    {tile.count}
+                  </p>
+                </div>
+                {tile.icon}
+              </div>
 
-        <div className="bg-white rounded-lg shadow p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-600">Motoristas com Alertas</p>
-              <p className="text-2xl font-bold text-red-600 mt-1">{stats.motoristasComAlerta}</p>
+              {hoveredTile === tile.key && (
+                <div className="absolute top-full left-0 mt-2 w-64 bg-white border border-gray-200 rounded-lg shadow-lg z-20 p-3 max-h-64 overflow-auto">
+                  {tile.motoristas.length > 0 ? (
+                    <ul className="space-y-1 text-sm text-gray-700">
+                      {tile.motoristas.map((motorista) => (
+                        <li key={motorista.id}>{motorista.nome}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-xs text-gray-500">Nenhum motorista listado.</p>
+                  )}
+                </div>
+              )}
             </div>
-            <XCircle className="w-8 h-8 text-red-500" />
-          </div>
-        </div>
-
-        <div className="bg-white rounded-lg shadow p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-600">CNH Vencida</p>
-              <p className="text-2xl font-bold text-red-600 mt-1">{stats.cnhVencida}</p>
-            </div>
-            <AlertTriangle className="w-8 h-8 text-red-500" />
-          </div>
-        </div>
-
-        <div className="bg-white rounded-lg shadow p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-600">Docs Vencendo</p>
-              <p className="text-2xl font-bold text-orange-600 mt-1">{stats.docsVencendo}</p>
-            </div>
-            <FileText className="w-8 h-8 text-orange-500" />
-          </div>
-        </div>
+          );
+        })}
       </div>
 
       <div className="bg-white rounded-lg shadow p-4">

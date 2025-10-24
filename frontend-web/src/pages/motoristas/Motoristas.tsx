@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, Search, Edit, CheckCircle, XCircle, User, RefreshCw, MessageCircle } from 'lucide-react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import api from '../../services/api';
 
 interface Motorista {
@@ -12,7 +13,6 @@ interface Motorista {
   email: string;
   celular: string;
   chavePix?: string;
-  dataNascimento?: string;
   cep?: string;
   logradouro?: string;
   numero?: string;
@@ -33,6 +33,14 @@ interface Motorista {
     proximaVerificacaoBRK?: string;
     statusBRK?: boolean;
   }>;
+  documento?: {
+    numeroCNH?: string;
+    validadeCNH?: string;
+    anoLicenciamento?: number;
+    dataVerificacaoBRK?: string;
+    proximaVerificacaoBRK?: string;
+    statusBRK?: boolean;
+  };
   contratos?: Array<{
     numeroContrato?: string;
     dataAssinatura?: string;
@@ -118,8 +126,12 @@ export default function Motoristas() {
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [selectedMotoristaId, setSelectedMotoristaId] = useState<string | null>(null);
   const [selectedMotoristaStatus, setSelectedMotoristaStatus] = useState<string>('');
+  const [alertMotoristaIds, setAlertMotoristaIds] = useState<string[]>([]);
+  const [alertFilterLabel, setAlertFilterLabel] = useState<string | null>(null);
   
   const queryClient = useQueryClient();
+  const location = useLocation();
+  const navigate = useNavigate();
 
   // Buscar motoristas
   const { data: motoristas = [], isLoading } = useQuery({
@@ -157,6 +169,20 @@ export default function Motoristas() {
     });
   }, [motoristas]);
 
+  // Aplicar filtros vindos da página de alertas
+  useEffect(() => {
+    const state = location.state as { alertFilter?: { ids?: string[]; label?: string } } | null;
+    if (state?.alertFilter) {
+      const ids = Array.isArray(state.alertFilter.ids) ? state.alertFilter.ids : [];
+      setAlertMotoristaIds(ids);
+      setAlertFilterLabel(state.alertFilter.label ?? null);
+      setFilterStatus('TODOS');
+      setFilterTipo('');
+      setSearchTerm('');
+      navigate(location.pathname, { replace: true, state: null });
+    }
+  }, [location.state, location.pathname, navigate]);
+
   // Filtrar motoristas
   const filteredMotoristas = useMemo(() => {
     const normalizedSearch = searchTerm.trim().toLowerCase();
@@ -181,9 +207,12 @@ export default function Motoristas() {
 
       const matchesStatus = !statusFiltro ? true : statusFiltro.includes(m.status);
       const matchesTipo = !filterTipo || m.tipoVeiculo === filterTipo;
-      return matchesSearch && matchesStatus && matchesTipo;
+      const matchesAlertFilter =
+        alertMotoristaIds.length === 0 || alertMotoristaIds.includes(m.id);
+
+      return matchesSearch && matchesStatus && matchesTipo && matchesAlertFilter;
     });
-  }, [motoristasOrdenados, searchTerm, filterStatus, filterTipo]);
+  }, [motoristasOrdenados, searchTerm, filterStatus, filterTipo, alertMotoristaIds]);
 
   const handleEdit = (id: string) => {
     setEditingId(id);
@@ -282,6 +311,31 @@ export default function Motoristas() {
           </div>
         ) : (
           <div className="overflow-x-auto">
+            {alertMotoristaIds.length > 0 && (
+              <div className="px-6 pt-6 pb-2">
+                <div className="bg-blue-50 border border-blue-200 text-blue-800 px-4 py-3 rounded-lg flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <p className="font-semibold">
+                      Visualizando motoristas em: {alertFilterLabel || 'Alerta selecionado'}
+                    </p>
+                    <p className="text-sm">
+                      {alertMotoristaIds.length}{' '}
+                      {alertMotoristaIds.length === 1 ? 'motorista' : 'motoristas'} encontrados.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setAlertMotoristaIds([]);
+                      setAlertFilterLabel(null);
+                      setFilterStatus('ATIVOS_ONBOARDING');
+                    }}
+                    className="inline-flex items-center justify-center px-3 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 transition-colors"
+                  >
+                    Limpar filtro
+                  </button>
+                </div>
+              </div>
+            )}
             <table className="w-full">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
@@ -296,10 +350,10 @@ export default function Motoristas() {
 
               <tbody className="bg-white divide-y divide-gray-200">
                 {filteredMotoristas.map((motorista: any) => {
-                  const documentos = motorista.documentos?.[0] || {};
-                  const cnhValida = documentos.validadeCNH ? new Date(documentos.validadeCNH) > new Date() : false;
-                  const brkValido = documentos.statusBRK || false;
-                  const temDocumentos = documentos.numeroCNH && documentos.validadeCNH && documentos.anoLicenciamento;
+                  const documento = motorista.documentos?.[0] || motorista.documento || {};
+                  const cnhValida = documento.validadeCNH ? new Date(documento.validadeCNH) > new Date() : false;
+                  const brkValido = documento.statusBRK || false;
+                  const temDocumentos = documento.numeroCNH && documento.validadeCNH && documento.anoLicenciamento;
                   const elegivel = cnhValida && brkValido && temDocumentos;
                   
                   // WhatsApp link
