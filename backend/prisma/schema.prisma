@@ -151,6 +151,8 @@ model Motorista {
   historicoStatus             HistoricoStatusMotorista[]
   ofertasRotas                OfertaRota[]
   rotas                       Rota[]
+  historicosTrackingRotas     HistoricoTrackingRota[]
+  metricasEntregas            MetricaEntrega[]
 
   @@index([cpf])
   @@index([status])
@@ -350,7 +352,7 @@ model Rota {
   valorCancelamento     Decimal?       @db.Decimal(10, 2)
   motoristaId           String?
   criadoPor             String
-  statusTracking        StatusTracking? @default(AGUARDANDO)
+  statusTracking        StatusTracking @default(AGUARDANDO)
   timestampACaminho     DateTime?
   timestampNoLocal      DateTime?
   timestampRotaIniciada DateTime?
@@ -362,6 +364,8 @@ model Rota {
   motorista             Motorista?     @relation(fields: [motoristaId], references: [id])
   tabelaPrecos          TabelaPreco?   @relation(fields: [tabelaPrecosId], references: [id])
   ofertas               OfertaRota[]
+  historicosTracking    HistoricoTrackingRota[]
+  metricaEntrega        MetricaEntrega?
 
   @@index([codigoRota])
   @@index([dataRota, status])
@@ -396,6 +400,26 @@ model OfertaRota {
   @@index([motoristaId, status])
   @@index([rotaId])
   @@map("ofertas_rotas")
+}
+
+model HistoricoTrackingRota {
+  id            String         @id @default(cuid())
+  rotaId        String
+  motoristaId   String
+  status        StatusTracking
+  latitude      Decimal?       @db.Decimal(10, 8)
+  longitude     Decimal?       @db.Decimal(11, 8)
+  dispositivo   String?        @db.VarChar(255)
+  ip            String?        @db.VarChar(45)
+  observacao    String?        @db.Text
+  createdAt     DateTime       @default(now())
+
+  rota          Rota           @relation(fields: [rotaId], references: [id])
+  motorista     Motorista      @relation(fields: [motoristaId], references: [id])
+
+  @@index([rotaId, status])
+  @@index([motoristaId])
+  @@map("historicos_tracking_rotas")
 }
 
 model TabelaPreco {
@@ -464,9 +488,19 @@ model MetricaEntrega {
   horarioChegada      DateTime?
   atrasouCarregamento Boolean   @default(false)
   minutosAtraso       Int?
+  insucessos          Int?
+  satisfacaoMotorista String?   @db.VarChar(30)
+  feedbackMotorista   String?   @db.Text
+  horaInicioRota      DateTime?
+  horaFimRota         DateTime?
+  duracaoEmMinutos    Int?
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
 
+  rota                Rota      @relation(fields: [rotaId], references: [id])
+  motorista           Motorista @relation(fields: [motoristaId], references: [id])
+
+  @@unique([rotaId])
   @@index([data])
   @@index([motoristaId])
   @@map("metricas_entregas")

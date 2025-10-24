@@ -1,6 +1,15 @@
 import prisma from '../config/database';
 import { AppError } from '../middlewares/error.middleware';
-import { TipoVeiculo, TipoRota, CicloRota, StatusRota, StatusOferta, PropriedadeVeiculo } from '@prisma/client';
+import {
+  TipoVeiculo,
+  TipoRota,
+  CicloRota,
+  StatusRota,
+  StatusOferta,
+  PropriedadeVeiculo,
+  StatusTracking,
+  Prisma,
+} from '@prisma/client';
 
 interface CriarRotaData {
   dataRota: Date;
@@ -25,7 +34,30 @@ interface AuditData {
   longitude?: number;
 }
 
+interface AtualizarTrackingParams {
+  rotaId: string;
+  motoristaId: string;
+  novoStatus: StatusTracking;
+  latitude?: number | null;
+  longitude?: number | null;
+  observacao?: string;
+  dispositivo?: string | null;
+  ip?: string | null;
+  insucessos?: number;
+  quantidadePNOV?: number;
+  satisfacaoMotorista?: string;
+  feedbackMotorista?: string;
+}
+
 class RotaService {
+  private readonly trackingSequencia: StatusTracking[] = [
+    StatusTracking.AGUARDANDO,
+    StatusTracking.A_CAMINHO,
+    StatusTracking.NO_LOCAL,
+    StatusTracking.ROTA_INICIADA,
+    StatusTracking.ROTA_CONCLUIDA,
+  ];
+
   // ========================================
   // D-1: CRIAR OFERTA DE ROTA
   // ========================================
@@ -308,6 +340,7 @@ class RotaService {
   // ========================================
   async listar(filtros: {
     status?: StatusRota;
+    statusLista?: StatusRota[];
     cicloRota?: CicloRota;
     tipoVeiculo?: TipoVeiculo;
     tipoRota?: TipoRota;
@@ -317,7 +350,9 @@ class RotaService {
   } = {}) {
     const where: any = {};
 
-    if (filtros.status) {
+    if (filtros.statusLista && filtros.statusLista.length > 0) {
+      where.status = { in: filtros.statusLista };
+    } else if (filtros.status) {
       where.status = filtros.status;
     }
 
@@ -333,11 +368,22 @@ class RotaService {
       where.tipoRota = filtros.tipoRota;
     }
 
-    if (filtros.dataInicio && filtros.dataFim) {
-      where.dataRota = {
-        gte: new Date(filtros.dataInicio),
-        lte: new Date(filtros.dataFim)
-      };
+    if (filtros.dataInicio || filtros.dataFim) {
+      const dataRotaFiltro: any = {};
+
+      if (filtros.dataInicio) {
+        const inicio = new Date(filtros.dataInicio);
+        inicio.setHours(0, 0, 0, 0);
+        dataRotaFiltro.gte = inicio;
+      }
+
+      if (filtros.dataFim) {
+        const fim = new Date(filtros.dataFim);
+        fim.setHours(23, 59, 59, 999);
+        dataRotaFiltro.lte = fim;
+      }
+
+      where.dataRota = dataRotaFiltro;
     }
 
     if (filtros.motoristaId) {
@@ -645,6 +691,259 @@ class RotaService {
     return {
       message: 'Rota excluída com sucesso'
     };
+  }
+
+  // ========================================
+  // ATUALIZAR TRACKING (MOTORISTA)
+  // ========================================
+  async atualizarTracking({
+    rotaId,
+    motoristaId,
+    novoStatus,
+    latitude,
+    longitude,
+    observacao,
+    dispositivo,
+    ip,
+    insucessos,
+    quantidadePNOV,
+    satisfacaoMotorista,
+    feedbackMotorista,
+  }: AtualizarTrackingParams) {
+    const rota = await prisma.rota.findUnique({
+      where: { id: rotaId },
+      include: {
+        motorista: {
+          select: {
+            id: true,
+            status: true,
+          },
+        },
+      },
+    });
+
+    if (!rota) {
+      throw new AppError('Rota não encontrada', 404);
+    }
+
+    if (rota.motoristaId !== motoristaId) {
+      throw new AppError('Rota não pertence ao motorista autenticado', 403);
+    }
+
+    const statusAtual = rota.statusTracking ?? StatusTracking.AGUARDANDO;
+    const { indiceAtual, indiceNovo } = this.validarTransicaoTracking(statusAtual, novoStatus);
+
+    this.validarStatusRotaParaTracking(rota.status, novoStatus, indiceAtual, indiceNovo);
+
+    const agora = new Date();
+    const updateData: any = {
+      statusTracking: novoStatus,
+    };
+
+    if (novoStatus === StatusTracking.A_CAMINHO) {
+      updateData.timestampACaminho = agora;
+    }
+
+    if (novoStatus === StatusTracking.NO_LOCAL) {
+      updateData.timestampNoLocal = agora;
+    }
+
+    if (novoStatus === StatusTracking.ROTA_INICIADA) {
+      updateData.timestampRotaIniciada = agora;
+      updateData.status = StatusRota.EM_ANDAMENTO;
+      updateData.horaInicioReal = agora;
+    }
+
+    if (novoStatus === StatusTracking.ROTA_CONCLUIDA) {
+      updateData.timestampRotaConcluida = agora;
+      updateData.status = StatusRota.CONCLUIDA;
+      updateData.horaFimReal = agora;
+    }
+
+    const latitudeDecimal =
+      latitude !== undefined && latitude !== null
+        ? new Prisma.Decimal(Number(latitude).toFixed(8))
+        : null;
+
+    const longitudeDecimal =
+      longitude !== undefined && longitude !== null
+        ? new Prisma.Decimal(Number(longitude).toFixed(8))
+        : null;
+
+    const resultado = await prisma.$transaction(async (tx) => {
+      const rotaAtualizada = await tx.rota.update({
+        where: { id: rotaId },
+        data: updateData,
+        include: {
+          local: true,
+          motorista: {
+            select: {
+              id: true,
+              nomeCompleto: true,
+              celular: true,
+              tipoVeiculo: true,
+              status: true,
+            },
+          },
+          metricaEntrega: true,
+        },
+      });
+
+      await tx.historicoTrackingRota.create({
+        data: {
+          rotaId,
+          motoristaId,
+          status: novoStatus,
+          latitude: latitudeDecimal,
+          longitude: longitudeDecimal,
+          dispositivo: dispositivo ? dispositivo.substring(0, 255) : null,
+          ip: ip ? ip.substring(0, 45) : null,
+          observacao: observacao || null,
+        },
+      });
+
+      if (novoStatus === StatusTracking.ROTA_CONCLUIDA) {
+        await this.registrarConclusaoRota(tx, rotaAtualizada, {
+          motoristaId,
+          insucessos,
+          quantidadePNOV,
+          satisfacaoMotorista,
+          feedbackMotorista,
+        });
+      }
+
+      return rotaAtualizada;
+    });
+
+    return resultado;
+  }
+
+  private validarTransicaoTracking(statusAtual: StatusTracking, novoStatus: StatusTracking) {
+    const indiceAtual = this.trackingSequencia.indexOf(statusAtual);
+    const indiceNovo = this.trackingSequencia.indexOf(novoStatus);
+
+    if (indiceNovo === -1) {
+      throw new AppError('Status de tracking inválido', 400);
+    }
+
+    if (indiceNovo < indiceAtual) {
+      throw new AppError('Não é possível regressar o status de tracking', 400);
+    }
+
+    if (indiceNovo > indiceAtual + 1) {
+      throw new AppError('Atualize o status de tracking na ordem correta', 400);
+    }
+
+    return { indiceAtual, indiceNovo };
+  }
+
+  private validarStatusRotaParaTracking(
+    statusRota: StatusRota,
+    novoStatus: StatusTracking,
+    indiceAtual: number,
+    indiceNovo: number,
+  ) {
+    const statusQueExigemConfirmacao = new Set<StatusTracking>([
+      StatusTracking.A_CAMINHO,
+      StatusTracking.NO_LOCAL,
+    ]);
+    if (statusQueExigemConfirmacao.has(novoStatus)) {
+      if (statusRota !== StatusRota.CONFIRMADA) {
+        throw new AppError('A rota precisa estar confirmada para atualizar o tracking', 400);
+      }
+    }
+
+    if (novoStatus === StatusTracking.ROTA_INICIADA) {
+      const statusValidos = new Set<StatusRota>([StatusRota.CONFIRMADA, StatusRota.EM_ANDAMENTO]);
+      if (!statusValidos.has(statusRota as StatusRota)) {
+        throw new AppError('A rota precisa estar confirmada para ser iniciada', 400);
+      }
+    }
+
+    if (novoStatus === StatusTracking.ROTA_CONCLUIDA) {
+      if (statusRota !== StatusRota.EM_ANDAMENTO && indiceNovo > indiceAtual) {
+        throw new AppError('A rota precisa estar em andamento para ser concluída', 400);
+      }
+    }
+  }
+
+  private async registrarConclusaoRota(
+    tx: Prisma.TransactionClient,
+    rota: any,
+    dados: {
+      motoristaId: string;
+      insucessos?: number;
+      quantidadePNOV?: number;
+      satisfacaoMotorista?: string;
+      feedbackMotorista?: string;
+    },
+  ) {
+    const totalPacotes = Number(rota.qtdePacotes ?? 0);
+    const insucessos = Number(dados.insucessos ?? 0);
+    const quantidadePNOV = Number(dados.quantidadePNOV ?? 0);
+    const pacotesEntregues = Math.max(totalPacotes - insucessos - quantidadePNOV, 0);
+    const pacotesRetornados = insucessos;
+    const pacotesPNOV = quantidadePNOV;
+    const pacotesDNR = 0;
+    const taxaDRCValor =
+      totalPacotes > 0 ? ((insucessos + quantidadePNOV) / totalPacotes) * 100 : 0;
+    const taxaDRC = new Prisma.Decimal(taxaDRCValor.toFixed(2));
+
+    const dataReferencia = new Date(rota.dataRota);
+    dataReferencia.setHours(0, 0, 0, 0);
+
+    const horaInicio =
+      rota.horaInicioReal ?? rota.timestampRotaIniciada ?? new Date(rota.dataRota);
+    const horaFim = rota.horaFimReal ?? rota.timestampRotaConcluida ?? new Date();
+    const duracaoEmMinutos =
+      horaInicio && horaFim
+        ? Math.max(Math.round((horaFim.getTime() - horaInicio.getTime()) / 60000), 0)
+        : null;
+
+    await tx.metricaEntrega.upsert({
+      where: { rotaId: rota.id },
+      create: {
+        rotaId: rota.id,
+        motoristaId: dados.motoristaId,
+        data: dataReferencia,
+        totalPacotes,
+        pacotesEntregues,
+        pacotesRetornados,
+        pacotesPNOV,
+        pacotesDNR,
+        taxaDRC,
+        horarioCarregamento: horaInicio,
+        horarioChegada: horaFim,
+        atrasouCarregamento: false,
+        minutosAtraso: null,
+        insucessos,
+        satisfacaoMotorista: dados.satisfacaoMotorista || null,
+        feedbackMotorista: dados.feedbackMotorista || null,
+        horaInicioRota: horaInicio,
+        horaFimRota: horaFim,
+        duracaoEmMinutos: duracaoEmMinutos ?? null,
+      },
+      update: {
+        motoristaId: dados.motoristaId,
+        data: dataReferencia,
+        totalPacotes,
+        pacotesEntregues,
+        pacotesRetornados,
+        pacotesPNOV,
+        pacotesDNR,
+        taxaDRC,
+        horarioCarregamento: horaInicio,
+        horarioChegada: horaFim,
+        atrasouCarregamento: false,
+        minutosAtraso: null,
+        insucessos,
+        satisfacaoMotorista: dados.satisfacaoMotorista || null,
+        feedbackMotorista: dados.feedbackMotorista || null,
+        horaInicioRota: horaInicio,
+        horaFimRota: horaFim,
+        duracaoEmMinutos: duracaoEmMinutos ?? null,
+      },
+    });
   }
 
   // ========================================

@@ -9,6 +9,7 @@ class RotaController {
     const usuarioId = req.user?.id;
 
     if (!usuarioId) {
+      console.warn('[RotaController] Requisição sem usuário autenticado.');
       throw new AppError('Usuário não autenticado', 401);
     }
 
@@ -18,8 +19,14 @@ class RotaController {
     });
 
     if (!motorista) {
+      console.warn('[RotaController] Nenhum motorista vinculado ao usuário', { usuarioId });
       throw new AppError('Motorista não encontrado para este usuário', 404);
     }
+
+    console.debug('[RotaController] Motorista associado encontrado', {
+      usuarioId,
+      motoristaId: motorista.id,
+    });
 
     return motorista.id;
   }
@@ -136,8 +143,36 @@ class RotaController {
   
   async listar(req: Request, res: Response) {
     try {
+      const statusQuery = req.query.status;
+      const statusEnumValues = Object.values(StatusRota);
+
+      const parseStatus = (value?: string | null): StatusRota | undefined => {
+        if (!value) return undefined;
+        const normalized = value.toString().toUpperCase() as StatusRota;
+        return statusEnumValues.includes(normalized) ? normalized : undefined;
+      };
+
+      let statusLista: StatusRota[] | undefined;
+      let statusUnico: StatusRota | undefined;
+
+      if (Array.isArray(statusQuery)) {
+        statusLista = statusQuery
+          .map((valor) => parseStatus(typeof valor === 'string' ? valor : String(valor)))
+          .filter((valor): valor is StatusRota => Boolean(valor));
+      } else if (typeof statusQuery === 'string') {
+        if (statusQuery.includes(',')) {
+          statusLista = statusQuery
+            .split(',')
+            .map((valor) => parseStatus(valor.trim()))
+            .filter((valor): valor is StatusRota => Boolean(valor));
+        } else {
+          statusUnico = parseStatus(statusQuery);
+        }
+      }
+
       const filtros = {
-        status: req.query.status as StatusRota,
+        status: statusUnico,
+        statusLista,
         cicloRota: req.query.cicloRota as CicloRota,
         tipoVeiculo: req.query.tipoVeiculo as TipoVeiculo,
         tipoRota: req.query.tipoRota as TipoRota,
@@ -148,9 +183,18 @@ class RotaController {
 
       if (req.user?.perfil === 'MOTORISTA') {
         filtros.motoristaId = await this.obterMotoristaIdPorUsuario(req);
+        console.debug('[RotaController] Forçando filtro de motorista para usuário logado', {
+          usuarioId: req.user?.id,
+          motoristaId: filtros.motoristaId,
+        });
       }
 
       const rotas = await rotaService.listar(filtros);
+
+      console.debug('[RotaController] Rotas encontradas para filtros', {
+        filtros,
+        quantidade: rotas.length,
+      });
 
       return res.json({
         status: 'success',
@@ -325,20 +369,73 @@ class RotaController {
         });
       }
 
-      // Criar oferta
-      const oferta = await prisma.ofertaRota.create({
-        data: {
+      const rota = await prisma.rota.findUnique({
+        where: { id: rotaId },
+        select: { status: true },
+      });
+
+      if (!rota) {
+        return res.status(404).json({
+          status: 'error',
+          message: 'Rota não encontrada',
+        });
+      }
+
+      const statusPermitidos = new Set<StatusRota>([
+        StatusRota.DISPONIVEL,
+        StatusRota.RECUSADA,
+        StatusRota.OFERTADA,
+      ]);
+
+      if (!statusPermitidos.has(rota.status as StatusRota)) {
+        return res.status(400).json({
+          status: 'error',
+          message: 'A rota selecionada não está disponível para oferta',
+        });
+      }
+
+      const ofertaExistente = await prisma.ofertaRota.findFirst({
+        where: {
           rotaId,
           motoristaId,
-          status: 'PENDENTE',
-          dataEnvio: new Date(),
+          status: StatusOferta.PENDENTE,
         },
       });
 
+      let oferta;
+      if (ofertaExistente) {
+        oferta = await prisma.ofertaRota.update({
+          where: { id: ofertaExistente.id },
+          data: {
+            dataEnvio: new Date(),
+          },
+        });
+      } else {
+        oferta = await prisma.ofertaRota.create({
+          data: {
+            rotaId,
+            motoristaId,
+            status: StatusOferta.PENDENTE,
+            dataEnvio: new Date(),
+          },
+        });
+      }
+
+      // Criar oferta
       // Atualizar status da rota para OFERTADA
       await prisma.rota.update({
         where: { id: rotaId },
-        data: { status: 'OFERTADA' },
+        data: {
+          status: StatusRota.OFERTADA,
+          motoristaId: null,
+          statusTracking: StatusTracking.AGUARDANDO,
+          timestampACaminho: null,
+          timestampNoLocal: null,
+          timestampRotaIniciada: null,
+          timestampRotaConcluida: null,
+          horaInicioReal: null,
+          horaFimReal: null,
+        },
       });
 
       // TODO: Enviar notificação Push para o motorista
@@ -363,6 +460,7 @@ class RotaController {
   async listarOfertas(req: Request, res: Response) {
     try {
       const motoristaId = await this.obterMotoristaIdPorUsuario(req);
+      console.debug('[RotaController] Listando ofertas para motorista', { motoristaId });
 
       const ofertas = await prisma.ofertaRota.findMany({
         where: {
@@ -390,6 +488,7 @@ class RotaController {
         }
       });
     } catch (error: any) {
+      console.error('[RotaController] Erro ao listar ofertas', error);
       const status = error instanceof AppError ? error.statusCode : 500;
       return res.status(status).json({
         status: 'error',
@@ -406,6 +505,7 @@ class RotaController {
     try {
       const { id } = req.params;
       const motoristaId = await this.obterMotoristaIdPorUsuario(req);
+      console.debug('[RotaController] Motorista aceitando oferta', { ofertaId: id, motoristaId });
       const {
         adicionouAgenda,
         latitude,
@@ -463,6 +563,13 @@ class RotaController {
         data: {
           status: StatusRota.ACEITA,
           motoristaId: motoristaId,
+          statusTracking: StatusTracking.AGUARDANDO,
+          timestampACaminho: null,
+          timestampNoLocal: null,
+          timestampRotaIniciada: null,
+          timestampRotaConcluida: null,
+          horaInicioReal: null,
+          horaFimReal: null,
         },
       });
 
@@ -484,6 +591,7 @@ class RotaController {
         data: ofertaAtualizada
       });
     } catch (error: any) {
+      console.error('[RotaController] Erro ao aceitar oferta', { ofertaId: req.params.id, error });
       const status = error instanceof AppError ? error.statusCode : 500;
       return res.status(status).json({
         status: 'error',
@@ -500,6 +608,7 @@ class RotaController {
     try {
       const { id } = req.params;
       const motoristaId = await this.obterMotoristaIdPorUsuario(req);
+      console.debug('[RotaController] Motorista recusando oferta', { ofertaId: id, motoristaId });
       const {
         motivo,
         latitude,
@@ -558,7 +667,17 @@ class RotaController {
       // Atualizar status da rota de volta para DISPONIVEL
       await prisma.rota.update({
         where: { id: oferta.rotaId },
-        data: { status: StatusRota.DISPONIVEL },
+        data: {
+          status: StatusRota.RECUSADA,
+          motoristaId: null,
+          statusTracking: StatusTracking.AGUARDANDO,
+          timestampACaminho: null,
+          timestampNoLocal: null,
+          timestampRotaIniciada: null,
+          timestampRotaConcluida: null,
+          horaInicioReal: null,
+          horaFimReal: null,
+        },
       });
 
       return res.json({
@@ -567,6 +686,7 @@ class RotaController {
         data: ofertaAtualizada
       });
     } catch (error: any) {
+      console.error('[RotaController] Erro ao recusar oferta', { ofertaId: req.params.id, error });
       const status = error instanceof AppError ? error.statusCode : 500;
       return res.status(status).json({
         status: 'error',
@@ -583,7 +703,21 @@ class RotaController {
     try {
       const { id } = req.params;
       const motoristaId = await this.obterMotoristaIdPorUsuario(req);
-      const { statusTracking, latitude, longitude, observacao } = req.body;
+      console.debug('[RotaController] Atualizando tracking da rota', { rotaId: id, motoristaId });
+      const {
+        statusTracking,
+        latitude,
+        longitude,
+        observacao,
+        insucessos,
+        quantidadePNOV,
+        satisfacaoMotorista,
+        satisfacao,
+        feedbackMotorista,
+        feedback,
+        dispositivo,
+        ip: ipBody,
+      } = req.body;
 
       if (!statusTracking) {
         return res.status(400).json({
@@ -592,7 +726,6 @@ class RotaController {
         });
       }
 
-      // Validar se o status é válido
       const statusValidos = Object.values(StatusTracking);
       if (!statusValidos.includes(statusTracking as StatusTracking)) {
         return res.status(400).json({
@@ -602,45 +735,44 @@ class RotaController {
         });
       }
 
-      // Buscar rota
-      const rota = await prisma.rota.findUnique({
-        where: { id },
+      const parseOptionalNumber = (valor: any): number | undefined => {
+        if (valor === undefined || valor === null || valor === '') return undefined;
+        const numero = Number(valor);
+        return Number.isFinite(numero) ? numero : undefined;
+      };
+
+      const latitudeNumero = parseOptionalNumber(latitude);
+      const longitudeNumero = parseOptionalNumber(longitude);
+      const insucessosNumero = parseOptionalNumber(insucessos);
+      const quantidadePNOVNumero = parseOptionalNumber(quantidadePNOV);
+
+      const forwardedIpHeader = req.headers['x-forwarded-for'];
+      const ipCabecalho = Array.isArray(forwardedIpHeader)
+        ? forwardedIpHeader[0]
+        : forwardedIpHeader;
+      const ipDerivado = typeof ipCabecalho === 'string' && ipCabecalho.length > 0
+        ? ipCabecalho.split(',')[0].trim()
+        : undefined;
+      const ip = ipBody || ipDerivado || req.ip;
+
+      const dispositivoHeader = typeof req.headers['user-agent'] === 'string'
+        ? req.headers['user-agent']
+        : undefined;
+
+      const rotaAtualizada = await rotaService.atualizarTracking({
+        rotaId: id,
+        motoristaId,
+        novoStatus: statusTracking as StatusTracking,
+        latitude: latitudeNumero,
+        longitude: longitudeNumero,
+        observacao,
+        dispositivo: dispositivo || dispositivoHeader || null,
+        ip,
+        insucessos: insucessosNumero,
+        quantidadePNOV: quantidadePNOVNumero,
+        satisfacaoMotorista: satisfacaoMotorista || satisfacao || undefined,
+        feedbackMotorista: feedbackMotorista || feedback || undefined,
       });
-
-      if (!rota) {
-        return res.status(404).json({
-          status: 'error',
-          message: 'Rota não encontrada'
-        });
-      }
-
-      if (rota.motoristaId !== motoristaId) {
-        return res.status(403).json({
-          status: 'error',
-          message: 'Rota não pertence ao motorista autenticado'
-        });
-      }
-
-      // Atualizar rota
-      const rotaAtualizada = await prisma.rota.update({
-        where: { id },
-        data: {
-          statusTracking: statusTracking as StatusTracking,
-        },
-      });
-
-      // TODO: Criar histórico de tracking
-      // Modelo historicoTracking ainda não foi criado no schema Prisma
-      // await prisma.historicoTracking.create({
-      //   data: {
-      //     rotaId: id,
-      //     statusTracking: statusTracking as StatusTracking,
-      //     latitude,
-      //     longitude,
-      //     observacao,
-      //     createdAt: new Date(),
-      //   },
-      // });
 
       return res.json({
         status: 'success',
@@ -648,6 +780,7 @@ class RotaController {
         data: rotaAtualizada
       });
     } catch (error: any) {
+      console.error('[RotaController] Erro ao atualizar tracking', { rotaId: req.params.id, error });
       const status = error instanceof AppError ? error.statusCode : 500;
       return res.status(status).json({
         status: 'error',

@@ -9,13 +9,15 @@ export type Turno = 'MANHA' | 'TARDE' | 'NOITE';
 
 // Status de Rota
 export type StatusRota =
-  | 'PLANEJADA'
+  | 'DISPONIVEL'
   | 'OFERTADA'
   | 'ACEITA'
   | 'RECUSADA'
+  | 'CANCELADA'
+  | 'CONFIRMADA'
   | 'EM_ANDAMENTO'
   | 'CONCLUIDA'
-  | 'CANCELADA';
+  | 'VALIDADA';
 
 // Status de Tracking do Motorista
 export type StatusTrackingMotorista =
@@ -35,6 +37,7 @@ export type TipoLocal = 'ESTACAO' | 'CLIENTE' | 'CENTRO_DISTRIBUICAO';
 export interface Motorista {
   id: string;
   nome: string;
+  nomeCompleto?: string;
   cpf: string;
   email: string;
   telefone: string;
@@ -77,6 +80,14 @@ export interface Rota {
   ofertas?: OfertaRota[];
   tipoRota?: 'NORMAL' | 'RESGATE';
   horaInicio?: string;
+  horaFim?: string | null;
+  tamanhoHoras?: number;
+  valorProjetado?: number;
+  valorTotalRota?: number;
+  cicloRota?: 'CICLO_1' | 'CICLO_2' | 'SAME_DAY' | 'SEM_CICLO' | string;
+  tipoVeiculoNecessario?: TipoVeiculo;
+  tipoVeiculo?: TipoVeiculo;
+  local?: Local;
   qtdeParadas?: number;
   qtdePacotes?: number;
   qtdeLocais?: number;
@@ -218,13 +229,15 @@ export const TurnoLabels: Record<Turno, string> = {
 };
 
 export const StatusRotaLabels: Record<StatusRota, string> = {
-  PLANEJADA: 'Planejada',
+  DISPONIVEL: 'Disponível',
   OFERTADA: 'Ofertada',
   ACEITA: 'Aceita',
   RECUSADA: 'Recusada',
+  CANCELADA: 'Cancelada',
+  CONFIRMADA: 'Confirmada',
   EM_ANDAMENTO: 'Em Andamento',
   CONCLUIDA: 'Concluída',
-  CANCELADA: 'Cancelada',
+  VALIDADA: 'Validada',
 };
 
 export const StatusAtivacaoLabels: Record<StatusAtivacao, string> = {

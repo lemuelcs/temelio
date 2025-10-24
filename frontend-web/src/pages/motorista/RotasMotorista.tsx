@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, FormEvent } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Truck,
@@ -16,12 +16,32 @@ import {
 } from 'lucide-react';
 import api from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
-import type { Rota, OfertaRota } from '../../types';
+import type { Rota, OfertaRota, StatusTrackingMotorista } from '../../types';
+import { StatusTrackingMotoristaLabels } from '../../types';
 
 export default function RotasMotorista() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [rotaParaConclusao, setRotaParaConclusao] = useState<Rota | null>(null);
   const { user } = useAuth();
   const queryClient = useQueryClient();
+
+  const obterPosicaoAtual = () =>
+    new Promise<{ latitude: number; longitude: number } | null>((resolve) => {
+      if (!navigator.geolocation) {
+        resolve(null);
+        return;
+      }
+
+      navigator.geolocation.getCurrentPosition(
+        (position) =>
+          resolve({
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+          }),
+        () => resolve(null),
+        { enableHighAccuracy: true, timeout: 10000 }
+      );
+    });
 
   // Buscar rotas oferecidas para o motorista (status OFERTADA)
   const { data: rotasOferecidas = [], isLoading: loadingOfertas } = useQuery({
@@ -44,7 +64,7 @@ export default function RotasMotorista() {
     enabled: !!user?.id,
   });
 
-  // Buscar rotas confirmadas do motorista (status ACEITA ou EM_ANDAMENTO)
+  // Buscar rotas confirmadas do motorista (CONFIRMADA, EM_ANDAMENTO ou CONCLUIDA)
   const { data: rotasConfirmadas = [], isLoading: loadingConfirmadas } = useQuery({
     queryKey: ['rotas-confirmadas', user?.id],
     queryFn: async () => {
@@ -52,7 +72,7 @@ export default function RotasMotorista() {
         const response = await api.get('/rotas', {
           params: {
             motoristaId: user?.id,
-            status: ['ACEITA', 'EM_ANDAMENTO'],
+            status: ['CONFIRMADA', 'EM_ANDAMENTO', 'CONCLUIDA'],
           },
         });
         const dados = response.data?.data?.rotas || response.data?.rotas || response.data;
@@ -94,8 +114,11 @@ export default function RotasMotorista() {
 
   // Mutation para atualizar status de tracking
   const atualizarTrackingMutation = useMutation({
-    mutationFn: async ({ rotaId, status }: { rotaId: string; status: string }) => {
-      return api.patch(`/rotas/${rotaId}/tracking`, { statusTracking: status });
+    mutationFn: async ({ rotaId, status, payload }: { rotaId: string; status: string; payload?: Record<string, any> }) => {
+      return api.patch(`/rotas/${rotaId}/tracking`, {
+        statusTracking: status,
+        ...payload,
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['rotas-confirmadas'] });
@@ -104,6 +127,37 @@ export default function RotasMotorista() {
       alert(error.response?.data?.message || 'Erro ao atualizar status');
     },
   });
+
+  const enviarAtualizacaoTracking = async (
+    rotaId: string,
+    status: StatusTrackingMotorista,
+    extraPayload: Record<string, any> = {},
+    callbacks?: { onSuccess?: () => void }
+  ) => {
+    const posicaoAtual = await obterPosicaoAtual();
+    if (!posicaoAtual) {
+      alert('Não foi possível capturar sua localização. Verifique se o GPS está habilitado.');
+    }
+
+    const payload: Record<string, any> = {
+      dispositivo: navigator.userAgent,
+      ...extraPayload,
+    };
+
+    if (posicaoAtual) {
+      payload.latitude = posicaoAtual.latitude;
+      payload.longitude = posicaoAtual.longitude;
+    }
+
+    atualizarTrackingMutation.mutate(
+      { rotaId, status, payload },
+      {
+        onSuccess: () => {
+          if (callbacks?.onSuccess) callbacks.onSuccess();
+        },
+      }
+    );
+  };
 
   const handleAceitar = (ofertaId: string) => {
     if (confirm('Deseja aceitar esta rota?')) {
@@ -116,25 +170,33 @@ export default function RotasMotorista() {
     recusarOfertaMutation.mutate({ ofertaId, motivo: motivo || 'Não informado' });
   };
 
-  const handleACaminho = (rotaId: string) => {
-    if (confirm('Confirma que você está à caminho do local?')) {
-      atualizarTrackingMutation.mutate({ rotaId, status: 'A_CAMINHO' });
+  const handleACaminho = (rota: Rota) => {
+    if (confirm('Confirma que você está à caminho do local de carregamento?')) {
+      enviarAtualizacaoTracking(rota.id, 'A_CAMINHO');
     }
   };
 
-  const handleChegueiNoLocal = (rotaId: string) => {
+  const handleChegueiNoLocal = (rota: Rota) => {
     if (confirm('Confirma que você chegou no local para carregar?')) {
-      atualizarTrackingMutation.mutate({ rotaId, status: 'NO_LOCAL' });
+      enviarAtualizacaoTracking(rota.id, 'NO_LOCAL');
+    }
+  };
+
+  const handleRotaCarregada = (rota: Rota) => {
+    if (confirm('Confirma que a rota foi carregada e está pronta para iniciar?')) {
+      enviarAtualizacaoTracking(rota.id, 'ROTA_INICIADA');
     }
   };
 
   const handleAbrirNavegacao = (rota: Rota) => {
-    if (rota.localOrigem?.latitude && rota.localOrigem?.longitude) {
-      const url = `https://www.google.com/maps/dir/?api=1&destination=${rota.localOrigem.latitude},${rota.localOrigem.longitude}`;
+    const origem: any = (rota as any).localOrigem || (rota as any).local;
+
+    if (origem?.latitude && origem?.longitude) {
+      const url = `https://www.google.com/maps/dir/?api=1&destination=${origem.latitude},${origem.longitude}`;
       window.open(url, '_blank');
-    } else if (rota.localOrigem?.endereco) {
+    } else if (origem?.endereco) {
       const enderecoEncoded = encodeURIComponent(
-        `${rota.localOrigem.endereco}, ${rota.localOrigem.cidade} - ${rota.localOrigem.estado}`
+        `${origem.endereco}, ${origem.cidade || ''} - ${origem.estado || ''}`
       );
       const url = `https://www.google.com/maps/dir/?api=1&destination=${enderecoEncoded}`;
       window.open(url, '_blank');
@@ -163,21 +225,52 @@ export default function RotasMotorista() {
     }
   };
 
-  const calcularHorarioColeta = (horaInicio: string) => {
-    if (!horaInicio) return '';
-    const [hora, minuto] = horaInicio.split(':').map(Number);
-    const totalMinutos = hora * 60 + minuto - 45;
-    const novaHora = Math.floor(totalMinutos / 60);
-    const novoMinuto = totalMinutos % 60;
-    return `${String(novaHora).padStart(2, '0')}:${String(novoMinuto).padStart(2, '0')}`;
-  };
+const calcularHorarioColeta = (horaInicio: string) => {
+  if (!horaInicio) return '';
+  const [hora, minuto] = horaInicio.split(':').map(Number);
+  const totalMinutos = hora * 60 + minuto - 45;
+  const novaHora = Math.floor(totalMinutos / 60);
+  const novoMinuto = totalMinutos % 60;
+  return `${String(novaHora).padStart(2, '0')}:${String(novoMinuto).padStart(2, '0')}`;
+};
 
-  const calcularValorEstimado = (rota: Rota) => {
-    return (rota.horasEstimadas * rota.valorHora).toFixed(2);
-  };
+const formatHoraRota = (valor?: string | null) => {
+  if (!valor) return '';
+  const parsed = new Date(valor);
+  if (!Number.isNaN(parsed.getTime())) {
+    return parsed.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  }
+
+  if (typeof valor === 'string' && valor.includes(':')) {
+    return valor.substring(0, 5);
+  }
+
+  return '';
+};
+
+const calcularValorEstimado = (rota: Rota) => {
+  if (rota.valorProjetado !== undefined && rota.valorProjetado !== null) {
+    return Number(rota.valorProjetado).toFixed(2);
+  }
+
+  const valorHora = rota.valorHora ?? 0;
+  const horas = rota.tamanhoHoras ?? rota.horasEstimadas ?? 0;
+  return Number(valorHora * horas).toFixed(2);
+};
+
+const obterDuracaoHoras = (rota: Rota) => rota.tamanhoHoras ?? rota.horasEstimadas ?? 0;
+
+const trackingBadgeClasses: Record<StatusTrackingMotorista, string> = {
+  AGUARDANDO: 'bg-gray-100 text-gray-700 border border-gray-200',
+  A_CAMINHO: 'bg-orange-100 text-orange-800 border border-orange-200',
+  NO_LOCAL: 'bg-blue-100 text-blue-800 border border-blue-200',
+  ROTA_INICIADA: 'bg-purple-100 text-purple-800 border border-purple-200',
+  ROTA_CONCLUIDA: 'bg-green-100 text-green-800 border border-green-200',
+};
 
   return (
-    <div className="space-y-6 pb-20">
+    <>
+      <div className="space-y-6 pb-20">
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-gray-900">🚚 Minhas Rotas</h1>
@@ -215,6 +308,13 @@ export default function RotasMotorista() {
               const dia = getDiaDaRota(rota.dataRota);
               const horarioColeta = calcularHorarioColeta(rota.horaInicio || '');
               const valorEstimado = calcularValorEstimado(rota);
+              const origem: any = (rota as any).localOrigem || (rota as any).local;
+              const nomeOrigem = origem?.nome || 'Local não informado';
+              const enderecoOrigem = origem
+                ? `${origem.endereco || ''}${origem.cidade ? `, ${origem.cidade}` : ''}${
+                    origem.estado ? ` - ${origem.estado}` : ''
+                  }`
+                : '';
 
               return (
                 <div key={oferta.id} className="p-4 hover:bg-gray-50">
@@ -244,16 +344,19 @@ export default function RotasMotorista() {
                       <p className="text-xs text-gray-500">Horário de início</p>
                       <p className="font-semibold text-gray-900 text-lg flex items-center gap-1">
                         <Clock className="w-4 h-4" />
-                        {rota.horaInicio?.substring(0, 5)}
+                        {formatHoraRota(rota.horaInicio)}
                       </p>
                     </div>
                     <div>
                       <p className="text-xs text-gray-500">Tamanho da rota</p>
-                      <p className="font-semibold text-gray-900">{rota.horasEstimadas}h</p>
+                      <p className="font-semibold text-gray-900">{obterDuracaoHoras(rota)}h</p>
                     </div>
                     <div>
                       <p className="text-xs text-gray-500">Local de origem</p>
-                      <p className="font-semibold text-gray-900">{rota.localOrigem?.nome}</p>
+                      <p className="font-semibold text-gray-900">{nomeOrigem}</p>
+                      {enderecoOrigem && (
+                        <p className="text-xs text-gray-500">{enderecoOrigem}</p>
+                      )}
                     </div>
                   </div>
 
@@ -321,6 +424,21 @@ export default function RotasMotorista() {
               const horarioColeta = calcularHorarioColeta(rota.horaInicio || '');
               const valorEstimado = calcularValorEstimado(rota);
               const isExpanded = expandedId === rota.id;
+              const statusTracking = (rota.statusTracking as StatusTrackingMotorista) || 'AGUARDANDO';
+              const podeIr = statusTracking === 'AGUARDANDO';
+              const podeChegar = statusTracking === 'A_CAMINHO';
+              const podeCarregar = statusTracking === 'NO_LOCAL';
+              const podeConcluir = statusTracking === 'ROTA_INICIADA';
+              const rotaConcluida = statusTracking === 'ROTA_CONCLUIDA';
+              const localOrigem: any = (rota as any).localOrigem || (rota as any).local;
+              const nomeLocalOrigem = localOrigem?.nome || 'Local não informado';
+              const enderecoLocalOrigem = localOrigem
+                ? `${localOrigem.endereco || ''}${localOrigem.cidade ? `, ${localOrigem.cidade}` : ''}${
+                    localOrigem.estado ? ` - ${localOrigem.estado}` : ''
+                  }`
+                : 'Endereço não informado';
+              const statusBadgeClass = trackingBadgeClasses[statusTracking];
+              const statusTrackingLabel = StatusTrackingMotoristaLabels[statusTracking];
 
               return (
                 <div key={rota.id} className="p-4">
@@ -329,16 +447,19 @@ export default function RotasMotorista() {
                     onClick={() => setExpandedId(isExpanded ? null : rota.id)}
                     className="cursor-pointer hover:bg-gray-50 -m-4 p-4 rounded-lg"
                   >
-                    <div className="flex items-center justify-between mb-3">
-                      <span className={`px-4 py-2 rounded-lg font-bold text-lg ${dia.classe}`}>
-                        {dia.texto}
+                  <div className="flex items-center justify-between mb-3">
+                    <span className={`px-4 py-2 rounded-lg font-bold text-lg ${dia.classe}`}>
+                      {dia.texto}
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className={`px-3 py-1 rounded-lg text-xs font-semibold ${statusBadgeClass}`}>
+                        {statusTrackingLabel}
                       </span>
-                      <div className="flex items-center gap-2">
-                        {rota.tipoRota === 'RESGATE' && (
-                          <span className="px-3 py-1 bg-purple-100 text-purple-800 text-sm font-semibold rounded-full flex items-center gap-1">
-                            <AlertTriangle className="w-4 h-4" />
-                            RESGATE
-                          </span>
+                      {rota.tipoRota === 'RESGATE' && (
+                        <span className="px-3 py-1 bg-purple-100 text-purple-800 text-sm font-semibold rounded-full flex items-center gap-1">
+                          <AlertTriangle className="w-4 h-4" />
+                          RESGATE
+                        </span>
                         )}
                         {isExpanded ? (
                           <ChevronUp className="w-5 h-5 text-gray-400" />
@@ -360,7 +481,7 @@ export default function RotasMotorista() {
                         <p className="text-xs text-gray-500">Horário de início</p>
                         <p className="font-semibold text-gray-900 text-lg flex items-center gap-1">
                           <Clock className="w-4 h-4" />
-                          {rota.horaInicio?.substring(0, 5)}
+                          {formatHoraRota(rota.horaInicio)}
                         </p>
                       </div>
                     </div>
@@ -378,7 +499,7 @@ export default function RotasMotorista() {
                   {isExpanded && (
                     <div className="mt-4 pt-4 border-t border-gray-200 space-y-4">
                       {/* Informações Detalhadas */}
-                      <div className="grid grid-cols-2 gap-3">
+                      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                         <div>
                           <p className="text-xs text-gray-500">Código da rota</p>
                           <p className="font-semibold text-gray-900">{rota.codigoRota || 'N/A'}</p>
@@ -398,6 +519,10 @@ export default function RotasMotorista() {
                             {rota.qtdePacotes || 'N/A'}
                           </p>
                         </div>
+                        <div>
+                          <p className="text-xs text-gray-500">Status atual</p>
+                          <p className="font-semibold text-gray-900">{statusTrackingLabel}</p>
+                        </div>
                       </div>
 
                       {/* Local de Origem */}
@@ -405,10 +530,10 @@ export default function RotasMotorista() {
                         <p className="text-xs text-gray-600 mb-1">Local de origem</p>
                         <p className="font-semibold text-gray-900 flex items-center gap-2">
                           <MapPin className="w-4 h-4 text-blue-600" />
-                          {rota.localOrigem?.nome}
+                          {nomeLocalOrigem}
                         </p>
                         <p className="text-sm text-gray-600 mt-1">
-                          {rota.localOrigem?.endereco}, {rota.localOrigem?.cidade} - {rota.localOrigem?.estado}
+                          {enderecoLocalOrigem}
                         </p>
                       </div>
 
@@ -422,30 +547,50 @@ export default function RotasMotorista() {
                       </button>
 
                       {/* Botões de Tracking */}
-                      <div className="grid grid-cols-2 gap-2">
-                        {(!rota.statusTracking || rota.statusTracking === 'AGUARDANDO') && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                        {podeIr && (
                           <button
-                            onClick={() => handleACaminho(rota.id)}
+                            onClick={() => handleACaminho(rota)}
                             disabled={atualizarTrackingMutation.isPending}
                             className="flex items-center justify-center gap-2 px-4 py-3 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition disabled:opacity-50"
                           >
                             <Truck className="w-5 h-5" />
-                            À caminho do local
+                            Estou a caminho
                           </button>
                         )}
-                        {rota.statusTracking === 'A_CAMINHO' && (
+                        {podeChegar && (
                           <button
-                            onClick={() => handleChegueiNoLocal(rota.id)}
+                            onClick={() => handleChegueiNoLocal(rota)}
                             disabled={atualizarTrackingMutation.isPending}
-                            className="flex items-center justify-center gap-2 px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition disabled:opacity-50"
+                            className="flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50"
                           >
                             <CheckCircle className="w-5 h-5" />
                             Cheguei no local
                           </button>
                         )}
-                        {rota.statusTracking === 'NO_LOCAL' && (
-                          <div className="col-span-2 p-3 bg-green-100 border border-green-300 rounded-lg text-center">
-                            <p className="font-semibold text-green-800">✓ Você está no local para carregar</p>
+                        {podeCarregar && (
+                          <button
+                            onClick={() => handleRotaCarregada(rota)}
+                            disabled={atualizarTrackingMutation.isPending}
+                            className="flex items-center justify-center gap-2 px-4 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition disabled:opacity-50"
+                          >
+                            <Package className="w-5 h-5" />
+                            Rota carregada
+                          </button>
+                        )}
+                        {podeConcluir && (
+                          <button
+                            onClick={() => setRotaParaConclusao(rota)}
+                            disabled={atualizarTrackingMutation.isPending}
+                            className="flex items-center justify-center gap-2 px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition disabled:opacity-50"
+                          >
+                            <CheckCircle className="w-5 h-5" />
+                            Concluir rota
+                          </button>
+                        )}
+                        {rotaConcluida && (
+                          <div className="md:col-span-2 p-3 bg-green-100 border border-green-300 rounded-lg text-center text-green-800 font-semibold">
+                            ✓ Rota concluída. Obrigado pelo seu trabalho!
                           </div>
                         )}
                       </div>
@@ -456,6 +601,151 @@ export default function RotasMotorista() {
             })
           )}
         </div>
+      </div>
+    </div>
+
+      {rotaParaConclusao && (
+        <ModalConclusaoRota
+          rota={rotaParaConclusao}
+          loading={atualizarTrackingMutation.isPending}
+          onClose={() => setRotaParaConclusao(null)}
+          onConfirm={({ insucessos, quantidadePNOV, satisfacao, feedback }) =>
+            enviarAtualizacaoTracking(
+              rotaParaConclusao.id,
+              'ROTA_CONCLUIDA',
+              {
+                insucessos,
+                quantidadePNOV,
+                satisfacaoMotorista: satisfacao,
+                feedbackMotorista: feedback,
+              },
+              {
+                onSuccess: () => setRotaParaConclusao(null),
+              }
+            )
+          }
+        />
+      )}
+    </>
+  );
+}
+
+function ModalConclusaoRota({
+  rota,
+  loading,
+  onClose,
+  onConfirm,
+}: {
+  rota: Rota;
+  loading: boolean;
+  onClose: () => void;
+  onConfirm: (dados: {
+    insucessos: number;
+    quantidadePNOV: number;
+    satisfacao: string;
+    feedback: string;
+  }) => void;
+}) {
+  const [insucessos, setInsucessos] = useState(0);
+  const [quantidadePNOV, setQuantidadePNOV] = useState(0);
+  const [satisfacao, setSatisfacao] = useState('SATISFEITO');
+  const [feedback, setFeedback] = useState('');
+
+  const handleSubmit = (event: FormEvent) => {
+    event.preventDefault();
+    onConfirm({
+      insucessos,
+      quantidadePNOV,
+      satisfacao,
+      feedback,
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 px-4">
+      <div className="bg-white rounded-lg shadow-xl max-w-lg w-full">
+        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900">Concluir rota</h3>
+            <p className="text-sm text-gray-500">Registre os resultados para finalizar a rota.</p>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600"
+            type="button"
+          >
+            <XCircle className="w-5 h-5" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="px-6 py-4 space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Insucessos</label>
+              <input
+                type="number"
+                min={0}
+                value={insucessos}
+                onChange={(e) => setInsucessos(Number(e.target.value))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">PNOV</label>
+              <input
+                type="number"
+                min={0}
+                value={quantidadePNOV}
+                onChange={(e) => setQuantidadePNOV(Number(e.target.value))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Como foi a rota?</label>
+            <select
+              value={satisfacao}
+              onChange={(e) => setSatisfacao(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <option value="MUITO_SATISFEITO">Muito satisfeito</option>
+              <option value="SATISFEITO">Satisfeito</option>
+              <option value="NEUTRO">Neutro</option>
+              <option value="INSATISFEITO">Insatisfeito</option>
+              <option value="MUITO_INSATISFEITO">Muito insatisfeito</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Feedback adicional</label>
+            <textarea
+              value={feedback}
+              onChange={(e) => setFeedback(e.target.value)}
+              rows={4}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="Compartilhe como foi a rota, desafios ou comentários."
+            />
+          </div>
+
+          <div className="flex justify-end gap-3 pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100"
+              disabled={loading}
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={loading}
+              className="px-4 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 transition disabled:opacity-50"
+            >
+              {loading ? 'Enviando...' : 'Registrar conclusão'}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );

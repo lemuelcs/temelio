@@ -18,25 +18,50 @@ import { TipoVeiculoLabels } from '../../types';
 export default function RotasMonitoramento() {
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
 
+  const STATUS_TRACKING_ORDER: Record<string, number> = {
+    AGUARDANDO: 0,
+    A_CAMINHO: 1,
+    NO_LOCAL: 2,
+    ROTA_INICIADA: 3,
+    ROTA_CONCLUIDA: 4,
+  };
+
   // Buscar rotas confirmadas do dia
   const { data: rotas = [], isLoading } = useQuery({
     queryKey: ['rotas-monitoramento', selectedDate],
     queryFn: async () => {
       try {
-        const response = await api.get('/rotas', {
-          params: {
-            status: ['ACEITA', 'EM_ANDAMENTO'],
-            dataInicio: selectedDate,
-            dataFim: selectedDate,
-          },
+        const params = new URLSearchParams({
+          dataInicio: selectedDate,
+          dataFim: selectedDate,
         });
+        ['CONFIRMADA', 'EM_ANDAMENTO', 'CONCLUIDA'].forEach((status) => params.append('status', status));
+
+        const response = await api.get(`/rotas?${params.toString()}`);
         const dados = response.data?.data?.rotas || response.data?.rotas || response.data;
-        return Array.isArray(dados) ? dados : [];
+        const resultado = Array.isArray(dados) ? dados : [];
+        return resultado.filter((rota: any) =>
+          ['CONFIRMADA', 'EM_ANDAMENTO', 'CONCLUIDA'].includes(rota.status)
+        );
       } catch (error) {
         console.error('Erro ao buscar rotas:', error);
         return [];
       }
     },
+  });
+
+  const rotasOrdenadas = [...rotas].sort((a: any, b: any) => {
+    const ordemA = STATUS_TRACKING_ORDER[a.statusTracking || 'AGUARDANDO'] ?? 0;
+    const ordemB = STATUS_TRACKING_ORDER[b.statusTracking || 'AGUARDANDO'] ?? 0;
+    if (ordemA !== ordemB) return ordemA - ordemB;
+
+    const horaInicioA = new Date(a.horaInicio).getTime();
+    const horaInicioB = new Date(b.horaInicio).getTime();
+    if (!Number.isNaN(horaInicioA) && !Number.isNaN(horaInicioB)) {
+      return horaInicioA - horaInicioB;
+    }
+
+    return 0;
   });
 
   const abrirWhatsApp = (telefone: string) => {
@@ -138,7 +163,7 @@ export default function RotasMonitoramento() {
             Monitoramento de Rotas
           </h1>
           <p className="text-gray-600 mt-1">
-            Acompanhe o status das rotas confirmadas em tempo real
+            Acompanhe o status das rotas confirmadas, em andamento e concluídas em tempo real
           </p>
         </div>
         <div className="flex items-center gap-4">
@@ -223,7 +248,7 @@ export default function RotasMonitoramento() {
           </div>
         ) : (
           <div className="divide-y divide-gray-200">
-            {rotas.map((rota: Rota) => (
+            {rotasOrdenadas.map((rota: Rota) => (
               <div key={rota.id} className="p-6 hover:bg-gray-50">
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex-1">

@@ -31,6 +31,22 @@ interface Rota {
     nome: string;
     cidade: string;
   };
+  motorista?: {
+    id: string;
+    nomeCompleto: string;
+    celular?: string;
+    tipoVeiculo?: string;
+    status?: string;
+  } | null;
+  ofertas?: Array<{
+    id: string;
+    status: string;
+    motorista?: {
+      id: string;
+      nomeCompleto: string;
+      celular?: string;
+    } | null;
+  }>;
 }
 
 interface Alocacao {
@@ -48,6 +64,46 @@ const addDaysToDateString = (dateStr: string, days: number) => {
   base.setDate(base.getDate() + days);
   return toLocalDateInput(base);
 };
+
+const STATUS_ORDER: Record<string, number> = {
+  DISPONIVEL: 0,
+  RECUSADA: 1,
+  OFERTADA: 2,
+  ACEITA: 3,
+};
+
+const STATUS_BADGE_CONFIG: Record<
+  string,
+  {
+    label: string;
+    classes: string;
+  }
+> = {
+  DISPONIVEL: {
+    label: 'Disponível',
+    classes: 'bg-blue-100 text-blue-800 border border-blue-200',
+  },
+  RECUSADA: {
+    label: 'Recusada',
+    classes: 'bg-red-100 text-red-800 border border-red-200',
+  },
+  OFERTADA: {
+    label: 'Ofertada',
+    classes: 'bg-amber-100 text-amber-800 border border-amber-200',
+  },
+  ACEITA: {
+    label: 'Aceita',
+    classes: 'bg-emerald-100 text-emerald-800 border border-emerald-200',
+  },
+};
+
+const allowedStatuses = ['DISPONIVEL', 'RECUSADA', 'OFERTADA', 'ACEITA'];
+
+const getStatusBadge = (status: string) =>
+  STATUS_BADGE_CONFIG[status] || {
+    label: status,
+    classes: 'bg-gray-100 text-gray-700 border border-gray-200',
+  };
 
 const formatDatePtBr = (value: string) => {
   if (!value) return '-';
@@ -72,6 +128,34 @@ const toHourMinute = (value?: string | null) => {
   }
 
   return '';
+};
+
+const timeToMinutes = (value?: string | null) => {
+  if (!value) return 0;
+
+  const parsed = new Date(value);
+  if (!Number.isNaN(parsed.getTime())) {
+    return parsed.getUTCHours() * 60 + parsed.getUTCMinutes();
+  }
+
+  if (typeof value === 'string' && value.includes(':')) {
+    const [hourStr, minuteStr] = value.split(':');
+    const hour = Number(hourStr);
+    const minute = Number(minuteStr);
+    if (!Number.isNaN(hour) && !Number.isNaN(minute)) {
+      return hour * 60 + minute;
+    }
+  }
+
+  return 0;
+};
+
+const isSameDate = (dataA?: string, dataB?: string) => {
+  if (!dataA || !dataB) return false;
+  const dateA = new Date(dataA);
+  const dateB = new Date(dataB);
+  if (Number.isNaN(dateA.getTime()) || Number.isNaN(dateB.getTime())) return false;
+  return dateA.toDateString() === dateB.toDateString();
 };
 
 export default function RotasAlocacao() {
@@ -155,17 +239,30 @@ export default function RotasAlocacao() {
         const dataFim = addDaysToDateString(filterData, 1);
 
         const params = new URLSearchParams({
-          status: 'DISPONIVEL',
           dataInicio,
           dataFim,
         });
+        allowedStatuses.forEach((status) => params.append('status', status));
 
-        console.log('📊 BUSCANDO ROTAS:', { status: 'DISPONIVEL', dataInicio, dataFim });
+        console.log('📊 BUSCANDO ROTAS:', { status: allowedStatuses, dataInicio, dataFim });
         const response = await api.get(`/rotas?${params.toString()}`);
         const dados = response.data?.data?.rotas || response.data?.rotas || response.data;
-        const resultado = Array.isArray(dados) ? dados : [];
-        console.log('📊 ROTAS CARREGADAS:', resultado.length);
-        console.log('📊 Detalhes das rotas:', resultado.map((r: any) => ({
+        const resultado = (Array.isArray(dados) ? dados : []) as Rota[];
+        const filtrado = resultado.filter((rota) => allowedStatuses.includes(rota.status));
+        const ordenado = [...filtrado].sort((a, b) => {
+          const statusDiff =
+            (STATUS_ORDER[a.status] ?? Number.MAX_SAFE_INTEGER) -
+            (STATUS_ORDER[b.status] ?? Number.MAX_SAFE_INTEGER);
+          if (statusDiff !== 0) return statusDiff;
+
+          const dataDiff =
+            new Date(a.dataRota).getTime() - new Date(b.dataRota).getTime();
+          if (dataDiff !== 0) return dataDiff;
+
+          return timeToMinutes(a.horaInicio) - timeToMinutes(b.horaInicio);
+        });
+        console.log('📊 ROTAS CARREGADAS:', ordenado.length);
+        console.log('📊 Detalhes das rotas:', ordenado.map((r: any) => ({
           id: r.id,
           codigoRota: r.codigoRota,
           dataRota: r.dataRota,
@@ -173,7 +270,7 @@ export default function RotasAlocacao() {
           tipoVeiculo: r.tipoVeiculo,
           status: r.status,
         })));
-        return resultado;
+        return ordenado;
       } catch (error) {
         console.error('Erro ao buscar rotas:', error);
         return [];
@@ -317,11 +414,35 @@ export default function RotasAlocacao() {
   // Filtrar motoristas elegíveis para uma rota
   const getMotoristasPorRota = (rota: Rota): Motorista[] => {
     // IDs dos motoristas já alocados (apenas nesta sessão, não no banco)
-    const motoristasAlocados = alocacoes.map((a) => a.motoristaId);
+    const motoristasAlocados = new Set(
+      alocacoes.filter((a) => a.rotaId !== rota.id).map((a) => a.motoristaId)
+    );
+
+    const motoristasBloqueadosSistema = new Set<string>();
+
+    rotas.forEach((outraRota: any) => {
+      if (outraRota.id === rota.id) return;
+      if (!isSameDate(outraRota.dataRota, rota.dataRota)) return;
+      if (normalizarCiclo(outraRota.cicloRota) !== normalizarCiclo(rota.cicloRota)) return;
+      if (outraRota.tipoVeiculo !== rota.tipoVeiculo) return;
+
+      if (['OFERTADA', 'ACEITA'].includes(outraRota.status)) {
+        if (outraRota.motorista?.id) {
+          motoristasBloqueadosSistema.add(outraRota.motorista.id);
+        }
+
+        outraRota.ofertas?.forEach((oferta: any) => {
+          if (['PENDENTE', 'ACEITA'].includes(oferta.status) && oferta.motorista?.id) {
+            motoristasBloqueadosSistema.add(oferta.motorista.id);
+          }
+        });
+      }
+    });
 
     return motoristas.filter((m: any) => {
-      // Verificar se já foi alocado nesta sessão
-      if (motoristasAlocados.includes(m.id)) return false;
+      if (motoristasAlocados.has(m.id)) return false;
+
+      if (motoristasBloqueadosSistema.has(m.id)) return false;
 
       // Verificar se o tipo de veículo é compatível
       if (m.tipoVeiculo !== rota.tipoVeiculo) return false;
@@ -535,111 +656,159 @@ export default function RotasAlocacao() {
           </div>
         ) : (
           <div className="divide-y divide-gray-200">
-            {rotas.map((rota: any) => {
+            {rotas.map((rota: Rota) => {
               const motoristasElegiveis = getMotoristasPorRota(rota);
               const alocacao = alocacoes.find((a) => a.rotaId === rota.id);
+              const motoristaSelecionado = alocacao
+                ? motoristas.find((m: any) => m.id === alocacao.motoristaId) || null
+                : null;
+              const ofertaAceita = rota.ofertas?.find((oferta) => oferta.status === 'ACEITA')?.motorista || null;
+              const ofertaPendente = rota.ofertas?.find((oferta) => oferta.status === 'PENDENTE')?.motorista || null;
+              const motoristaRelacionado =
+                motoristaSelecionado || rota.motorista || ofertaAceita || ofertaPendente || null;
+              const nomeMotoristaRelacionado = motoristaRelacionado?.nomeCompleto || 'Aguardando motorista';
+              const podeAlocar = rota.status === 'DISPONIVEL' || rota.status === 'RECUSADA';
+              const statusBadge = getStatusBadge(rota.status);
+              const mensagemStatus =
+                rota.status === 'OFERTADA'
+                  ? 'Oferta enviada. Aguardando resposta do motorista.'
+                  : rota.status === 'ACEITA'
+                  ? 'Motorista aceitou a rota. Aguardando roteirização.'
+                  : rota.status === 'RECUSADA'
+                  ? 'Rota recusada. Selecione um novo motorista elegível.'
+                  : null;
+              const cardClassName =
+                'p-6 transition ' + (rota.status === 'RECUSADA' ? 'bg-red-50/60 hover:bg-red-50' : 'hover:bg-gray-50');
 
               return (
-                <div key={rota.id} className="p-6 hover:bg-gray-50">
+                <div key={rota.id} className={cardClassName}>
                   <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
                     {/* Informações da Rota */}
                     <div className="lg:col-span-7">
-                      <div className="flex items-start gap-4">
-                        <div className="flex-shrink-0 w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
-                          <MapPin className="w-6 h-6 text-blue-600" />
-                        </div>
-                        <div className="flex-1">
-                          <h3 className="text-lg font-semibold text-gray-900">
-                            {rota.codigoRota || 'Sem código'}
-                          </h3>
-                          <div className="mt-2 space-y-1">
-                            <div className="flex items-center gap-2 text-sm text-gray-600">
-                              <Calendar className="w-4 h-4" />
-                              <span>{formatDate(rota.dataRota)}</span>
-                              <Clock className="w-4 h-4 ml-2" />
-                              <span>
-                                {formatTime(rota.horaInicio)}
-                                {rota.horaFim && ` - ${formatTime(rota.horaFim)}`}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-2 text-sm text-gray-600">
-                              <MapPin className="w-4 h-4" />
-                              <span>
-                                {rota.local?.nome || 'N/A'} - {rota.local?.cidade || ''}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-4 mt-2">
-                              <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-purple-100 text-purple-800">
-                                {getCicloLabel(rota.cicloRota)}
-                              </span>
-                              <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-blue-100 text-blue-800">
-                                {getTipoVeiculoLabel(rota.tipoVeiculo)}
-                              </span>
-                              <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-green-100 text-green-800">
-                                {rota.tamanhoHoras}h
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-1 text-sm font-semibold text-green-600 mt-2">
-                              <DollarSign className="w-4 h-4" />
-                              {formatCurrency(rota.valorProjetado)}
+                      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="flex items-start gap-4">
+                          <div className="flex-shrink-0 w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
+                            <MapPin className="w-6 h-6 text-blue-600" />
+                          </div>
+                          <div className="flex-1">
+                            <h3 className="text-lg font-semibold text-gray-900">
+                              {rota.codigoRota || 'Sem código'}
+                            </h3>
+                            <div className="mt-2 space-y-1">
+                              <div className="flex flex-wrap items-center gap-2 text-sm text-gray-600">
+                                <Calendar className="w-4 h-4" />
+                                <span>{formatDate(rota.dataRota)}</span>
+                                <Clock className="w-4 h-4 ml-1" />
+                                <span>
+                                  {formatTime(rota.horaInicio)}
+                                  {rota.horaFim && ` - ${formatTime(rota.horaFim)}`}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2 text-sm text-gray-600">
+                                <MapPin className="w-4 h-4" />
+                                <span>
+                                  {rota.local?.nome || 'N/A'} - {rota.local?.cidade || ''}
+                                </span>
+                              </div>
+                              <div className="flex flex-wrap items-center gap-3 mt-2">
+                                <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-purple-100 text-purple-800">
+                                  {getCicloLabel(rota.cicloRota)}
+                                </span>
+                                <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-blue-100 text-blue-800">
+                                  {getTipoVeiculoLabel(rota.tipoVeiculo)}
+                                </span>
+                                <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-green-100 text-green-800">
+                                  {rota.tamanhoHoras}h
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-1 text-sm font-semibold text-green-600 mt-2">
+                                <DollarSign className="w-4 h-4" />
+                                {formatCurrency(rota.valorProjetado)}
+                              </div>
                             </div>
                           </div>
                         </div>
+                        <span className={`self-start px-3 py-1 rounded-full text-xs font-semibold ${statusBadge.classes}`}>
+                          {statusBadge.label}
+                        </span>
                       </div>
                     </div>
 
                     {/* Seleção de Motorista */}
                     <div className="lg:col-span-5">
                       <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Selecionar Motorista
+                        {podeAlocar ? 'Selecionar Motorista' : 'Motorista vinculado'}
                       </label>
-                      <div className="flex gap-2">
-                        <select
-                          value={alocacao?.motoristaId || ''}
-                          onChange={(e) => handleAlocar(rota.id, e.target.value)}
-                          className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        >
-                          <option value="">-- Selecione um motorista --</option>
-                          {motoristasElegiveis.map((motorista: any) => (
-                            <option key={motorista.id} value={motorista.id}>
-                              {motorista.nomeCompleto} - {getTipoVeiculoLabel(motorista.tipoVeiculo)}
-                            </option>
-                          ))}
-                        </select>
-                        {alocacao && (
-                          <button
-                            onClick={() => handleDesalocar(rota.id)}
-                            className="flex-shrink-0 w-10 h-10 flex items-center justify-center bg-red-100 hover:bg-red-200 text-red-600 rounded-lg transition"
-                            title="Desalocar motorista"
-                          >
-                            <span className="text-lg font-bold">×</span>
-                          </button>
-                        )}
-                      </div>
-                      {motoristasElegiveis.length === 0 && (
-                        <div className="mt-2 text-xs text-red-600">
-                          <p className="font-semibold">⚠️ Nenhum motorista elegível</p>
-                          <p className="mt-1">
-                            Verifique se há motoristas:
-                          </p>
-                          <ul className="list-disc list-inside mt-1 space-y-0.5">
-                            <li>Com tipo de veículo: {getTipoVeiculoLabel(rota.tipoVeiculo)}</li>
-                            <li>Com status ATIVO</li>
-                            <li>Com disponibilidade para {formatDate(rota.dataRota)} - {getCicloLabel(rota.cicloRota)}</li>
-                            <li>Que ainda não foram alocados a outras rotas</li>
-                          </ul>
-                          {disponibilidades.length === 0 && (
-                            <p className="mt-2 text-red-700 font-semibold">
-                              ⚠️ Nenhuma disponibilidade foi carregada. Veja o alerta acima.
+
+                      {podeAlocar ? (
+                        <>
+                          <div className="flex gap-2">
+                            <select
+                              value={alocacao?.motoristaId || ''}
+                              onChange={(e) => handleAlocar(rota.id, e.target.value)}
+                              className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            >
+                              <option value="">-- Selecione um motorista --</option>
+                              {motoristasElegiveis.map((motorista: any) => (
+                                <option key={motorista.id} value={motorista.id}>
+                                  {motorista.nomeCompleto} - {getTipoVeiculoLabel(motorista.tipoVeiculo)}
+                                </option>
+                              ))}
+                            </select>
+                            {alocacao && (
+                              <button
+                                onClick={() => handleDesalocar(rota.id)}
+                                className="flex-shrink-0 w-10 h-10 flex items-center justify-center bg-red-100 hover:bg-red-200 text-red-600 rounded-lg transition"
+                                title="Desalocar motorista"
+                              >
+                                <span className="text-lg font-bold">×</span>
+                              </button>
+                            )}
+                          </div>
+
+                          {motoristasElegiveis.length === 0 && (
+                            <div className="mt-2 text-xs text-red-600">
+                              <p className="font-semibold">⚠️ Nenhum motorista elegível</p>
+                              <p className="mt-1">
+                                Verifique se há motoristas:
+                              </p>
+                              <ul className="list-disc list-inside mt-1 space-y-0.5">
+                                <li>Com tipo de veículo: {getTipoVeiculoLabel(rota.tipoVeiculo)}</li>
+                                <li>Com status ATIVO</li>
+                                <li>
+                                  Com disponibilidade para {formatDate(rota.dataRota)} - {getCicloLabel(rota.cicloRota)}
+                                </li>
+                                <li>Que ainda não foram alocados a outras rotas</li>
+                              </ul>
+                              {disponibilidades.length === 0 && (
+                                <p className="mt-2 text-red-700 font-semibold">
+                                  ⚠️ Nenhuma disponibilidade foi carregada. Veja o alerta acima.
+                                </p>
+                              )}
+                            </div>
+                          )}
+
+                          {alocacao && motoristaSelecionado && (
+                            <p className="mt-2 text-xs text-green-600 flex items-center gap-1">
+                              <CheckCircle className="w-3 h-3" />
+                              Motorista alocado: {motoristaSelecionado.nomeCompleto}
                             </p>
                           )}
+
+                          {rota.status === 'RECUSADA' && (
+                            <p className="mt-2 text-xs text-red-600">
+                              A última oferta foi recusada. Realize uma nova alocação para reenviar.
+                            </p>
+                          )}
+                        </>
+                      ) : (
+                        <div className="p-4 bg-gray-100 border border-gray-200 rounded-lg">
+                          <p className="text-xs text-gray-500 uppercase tracking-wide">Motorista</p>
+                          <p className="text-sm font-semibold text-gray-900 mt-1">{nomeMotoristaRelacionado}</p>
+                          {mensagemStatus && (
+                            <p className="text-xs text-gray-600 mt-2">{mensagemStatus}</p>
+                          )}
                         </div>
-                      )}
-                      {alocacao && (
-                        <p className="mt-2 text-xs text-green-600 flex items-center gap-1">
-                          <CheckCircle className="w-3 h-3" />
-                          Motorista alocado
-                        </p>
                       )}
                     </div>
                   </div>

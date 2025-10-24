@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle, XCircle, Package, MapPin, Clock, AlertTriangle } from 'lucide-react';
+import { CheckCircle, XCircle, Package, MapPin, Clock, AlertTriangle, Calendar } from 'lucide-react';
 import api from '../../services/api';
 
 interface Rota {
@@ -33,13 +33,13 @@ export default function RotasConfirmar() {
     queryKey: ['rotas-confirmar', selectedDate],
     queryFn: async () => {
       try {
-        const response = await api.get('/rotas', {
-          params: {
-            status: 'ACEITA',
-            dataInicio: selectedDate,
-            dataFim: selectedDate
-          }
+        const params = new URLSearchParams({
+          dataInicio: selectedDate,
+          dataFim: selectedDate
         });
+        ['ACEITA', 'CONFIRMADA', 'CANCELADA'].forEach((status) => params.append('status', status));
+
+        const response = await api.get(`/rotas?${params.toString()}`);
         const dados = response.data?.data?.rotas || response.data?.rotas || response.data;
         return Array.isArray(dados) ? dados : [];
       } catch (error) {
@@ -48,6 +48,12 @@ export default function RotasConfirmar() {
       }
     },
   });
+
+  const rotasAceitas = rotas.filter((rota: any) => rota.status === 'ACEITA');
+  const rotasConfirmadas = rotas.filter((rota: any) => rota.status === 'CONFIRMADA');
+  const rotasCanceladas = rotas.filter((rota: any) => rota.status === 'CANCELADA');
+  const naoHaRotas =
+    rotasAceitas.length === 0 && rotasConfirmadas.length === 0 && rotasCanceladas.length === 0;
 
   const getTipoVeiculoLabel = (tipo: string) => {
     const labels: Record<string, string> = {
@@ -96,7 +102,7 @@ export default function RotasConfirmar() {
       </div>
 
       {/* Estatísticas */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
           <div className="flex items-center gap-3">
             <div className="p-3 bg-yellow-100 rounded-lg">
@@ -104,21 +110,7 @@ export default function RotasConfirmar() {
             </div>
             <div>
               <p className="text-sm text-gray-600">Aguardando Confirmação</p>
-              <p className="text-2xl font-bold text-yellow-900">{rotas.length}</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-          <div className="flex items-center gap-3">
-            <div className="p-3 bg-blue-100 rounded-lg">
-              <Package className="w-6 h-6 text-blue-600" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-600">Total de Motoristas</p>
-              <p className="text-2xl font-bold text-blue-900">
-                {new Set(rotas.map((r: any) => r.motorista?.id).filter(Boolean)).size}
-              </p>
+              <p className="text-2xl font-bold text-yellow-900">{rotasAceitas.length}</p>
             </div>
           </div>
         </div>
@@ -126,11 +118,35 @@ export default function RotasConfirmar() {
         <div className="bg-green-50 border border-green-200 rounded-lg p-4">
           <div className="flex items-center gap-3">
             <div className="p-3 bg-green-100 rounded-lg">
-              <MapPin className="w-6 h-6 text-green-600" />
+              <CheckCircle className="w-6 h-6 text-green-600" />
+            </div>
+            <div>
+              <p className="text-sm text-gray-600">Rotas Confirmadas</p>
+              <p className="text-2xl font-bold text-green-900">{rotasConfirmadas.length}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <div className="flex items-center gap-3">
+            <div className="p-3 bg-red-100 rounded-lg">
+              <XCircle className="w-6 h-6 text-red-600" />
+            </div>
+            <div>
+              <p className="text-sm text-gray-600">Rotas Canceladas</p>
+              <p className="text-2xl font-bold text-red-900">{rotasCanceladas.length}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <div className="flex items-center gap-3">
+            <div className="p-3 bg-blue-100 rounded-lg">
+              <Calendar className="w-6 h-6 text-blue-600" />
             </div>
             <div>
               <p className="text-sm text-gray-600">Data Selecionada</p>
-              <p className="text-lg font-bold text-green-900">
+              <p className="text-lg font-bold text-blue-900">
                 {new Date(selectedDate).toLocaleDateString('pt-BR')}
               </p>
             </div>
@@ -145,75 +161,190 @@ export default function RotasConfirmar() {
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
             <p className="mt-4 text-gray-600">Carregando rotas...</p>
           </div>
-        ) : rotas.length === 0 ? (
+        ) : naoHaRotas ? (
           <div className="p-8 text-center">
             <AlertTriangle className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-            <p className="text-gray-600">Nenhuma rota aceita encontrada para esta data</p>
+            <p className="text-gray-600">Nenhuma rota para confirmar nesta data</p>
             <p className="text-sm text-gray-500 mt-2">
-              Selecione outra data ou aguarde as rotas serem aceitas pelos motoristas
+              Ajuste a data ou aguarde as rotas serem roteirizadas pela Amazon.
             </p>
           </div>
         ) : (
-          <div className="divide-y divide-gray-200">
-            {rotas.map((rota: any) => (
-              <div key={rota.id} className="p-6 hover:bg-gray-50">
-                <div className="flex items-start justify-between">
-                  <div className="flex-1 space-y-3">
-                    {/* Cabeçalho */}
-                    <div className="flex items-center gap-4">
-                      <div>
-                        <h3 className="font-semibold text-lg text-gray-900">
-                          {rota.motorista?.nomeCompleto || 'Sem motorista'}
-                        </h3>
-                        <p className="text-sm text-gray-500">
-                          {rota.motorista?.celular || 'Sem telefone'}
-                        </p>
+          <div className="flex flex-col">
+            {rotasAceitas.length > 0 && (
+              <>
+                <div className="px-6 py-3 bg-yellow-100 border-b border-yellow-200">
+                  <h2 className="text-sm font-semibold text-yellow-800 uppercase tracking-wide">
+                    Rotas aguardando confirmação
+                  </h2>
+                  <p className="text-xs text-yellow-700">
+                    Valide os dados recebidos da Amazon e confirme a rota.
+                  </p>
+                </div>
+                {rotasAceitas.map((rota: any, index: number) => (
+                  <div
+                    key={rota.id}
+                    className={`px-6 py-5 border-b border-gray-200 ${
+                      index === rotasAceitas.length - 1 && rotasConfirmadas.length === 0 && rotasCanceladas.length === 0
+                        ? 'border-b-0'
+                        : ''
+                    }`}
+                  >
+                    <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                      <div className="space-y-3">
+                        <div className="flex items-start gap-3">
+                          <div>
+                            <h3 className="font-semibold text-lg text-gray-900">
+                              {rota.motorista?.nomeCompleto || 'Sem motorista'}
+                            </h3>
+                            <p className="text-sm text-gray-500">
+                              {rota.motorista?.celular || 'Sem telefone'}
+                            </p>
+                          </div>
+                          <span className="px-3 py-1 bg-blue-100 text-blue-800 text-xs font-semibold rounded-full">
+                            {getCicloLabel(rota.cicloRota)}
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap gap-4 text-sm text-gray-600">
+                          <span className="inline-flex items-center gap-1">
+                            <MapPin className="w-4 h-4 text-blue-500" />
+                            {rota.local?.nome || 'N/A'}
+                          </span>
+                          <span className="inline-flex items-center gap-1">
+                            <Clock className="w-4 h-4 text-yellow-600" />
+                            {formatTime(rota.horaInicio)}
+                          </span>
+                          <span className="inline-flex items-center gap-1">
+                            <Package className="w-4 h-4 text-green-600" />
+                            {rota.tamanhoHoras}h
+                          </span>
+                          <span className="inline-flex items-center gap-1">
+                            <MapPin className="w-4 h-4 text-purple-600" />
+                            {rota.local?.cidade || 'Sem cidade'}
+                          </span>
+                        </div>
                       </div>
-                      <span className="px-3 py-1 bg-blue-100 text-blue-800 text-xs font-semibold rounded-full">
-                        {getCicloLabel(rota.cicloRota)}
-                      </span>
+                      <button
+                        onClick={() => setConfirmingId(rota.id)}
+                        className="flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition"
+                      >
+                        <CheckCircle className="w-5 h-5" />
+                        Confirmar Rota
+                      </button>
                     </div>
+                  </div>
+                ))}
+              </>
+            )}
 
-                    {/* Detalhes */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                      <div>
-                        <p className="text-gray-500">Local</p>
-                        <p className="font-medium text-gray-900">
-                          {rota.local?.nome || 'N/A'}
-                        </p>
+            {rotasConfirmadas.length > 0 && (
+              <>
+                <div className="px-6 py-3 bg-green-100 border-t border-b border-green-200">
+                  <h2 className="text-sm font-semibold text-green-800 uppercase tracking-wide">
+                    Rotas confirmadas
+                  </h2>
+                  <p className="text-xs text-green-700">
+                    Dados recebidos da Amazon e prontos para acompanhamento.
+                  </p>
+                </div>
+                {rotasConfirmadas.map((rota: any, index: number) => (
+                  <div
+                    key={rota.id}
+                    className={`px-6 py-5 bg-green-50 border-b border-green-200 ${
+                      index === rotasConfirmadas.length - 1 && rotasCanceladas.length === 0 ? 'border-b-0' : ''
+                    }`}
+                  >
+                    <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                      <div className="space-y-3">
+                        <div className="flex items-start gap-3">
+                          <CheckCircle className="w-5 h-5 text-green-600 mt-1" />
+                          <div>
+                            <h3 className="font-semibold text-lg text-green-900">
+                              {rota.codigoRota || 'Sem código'}
+                            </h3>
+                            <p className="text-sm text-green-700">
+                              Motorista: {rota.motorista?.nomeCompleto || 'Não informado'}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
+                          <div>
+                            <p className="text-green-700 font-medium">Paradas</p>
+                            <p className="text-green-900 font-semibold">{rota.qtdeParadas ?? '-'}</p>
+                          </div>
+                          <div>
+                            <p className="text-green-700 font-medium">Locais</p>
+                            <p className="text-green-900 font-semibold">{rota.qtdeLocais ?? '-'}</p>
+                          </div>
+                          <div>
+                            <p className="text-green-700 font-medium">Pacotes</p>
+                            <p className="text-green-900 font-semibold">{rota.qtdePacotes ?? '-'}</p>
+                          </div>
+                          <div>
+                            <p className="text-green-700 font-medium">Início previsto</p>
+                            <p className="text-green-900 font-semibold">
+                              {formatTime(rota.horaInicio)}
+                            </p>
+                          </div>
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-gray-500">Veículo</p>
-                        <p className="font-medium text-gray-900">
-                          {getTipoVeiculoLabel(rota.tipoVeiculo)}
+                      <button
+                        onClick={() => setConfirmingId(rota.id)}
+                        className="self-start flex items-center gap-2 px-4 py-2 bg-white text-green-700 border border-green-300 rounded-lg hover:bg-green-100 transition"
+                      >
+                        <Package className="w-5 h-5" />
+                        Editar dados
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </>
+            )}
+
+            {rotasCanceladas.length > 0 && (
+              <>
+                <div className="px-6 py-3 bg-red-100 border-t border-b border-red-200">
+                  <h2 className="text-sm font-semibold text-red-800 uppercase tracking-wide">
+                    Rotas canceladas pela Amazon
+                  </h2>
+                  <p className="text-xs text-red-700">
+                    Avalie o motivo e registre o valor de cancelamento se necessário.
+                  </p>
+                </div>
+                {rotasCanceladas.map((rota: any, index: number) => (
+                  <div
+                    key={rota.id}
+                    className={`px-6 py-5 bg-red-50 border-b border-red-200 ${
+                      index === rotasCanceladas.length - 1 ? 'border-b-0' : ''
+                    }`}
+                  >
+                    <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                      <div className="space-y-2">
+                        <div className="flex items-start gap-3">
+                          <AlertTriangle className="w-5 h-5 text-red-600 mt-1" />
+                          <div>
+                            <h3 className="font-semibold text-lg text-red-800">
+                              {rota.codigoRota || 'Rota cancelada'}
+                            </h3>
+                            <p className="text-sm text-red-700">
+                              Motorista: {rota.motorista?.nomeCompleto || 'Não informado'}
+                            </p>
+                          </div>
+                        </div>
+                        <p className="text-sm text-red-700">
+                          Motivo: {rota.motivoCancelamento || 'Motivo não informado'}
                         </p>
-                      </div>
-                      <div>
-                        <p className="text-gray-500">Horário</p>
-                        <p className="font-medium text-gray-900">
-                          {formatTime(rota.horaInicio)}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-gray-500">Duração</p>
-                        <p className="font-medium text-gray-900">
-                          {rota.tamanhoHoras}h
-                        </p>
+                        {rota.valorCancelamento && (
+                          <p className="text-sm text-red-800 font-semibold">
+                            Valor de cancelamento: {Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(rota.valorCancelamento))}
+                          </p>
+                        )}
                       </div>
                     </div>
                   </div>
-
-                  {/* Botão Confirmar */}
-                  <button
-                    onClick={() => setConfirmingId(rota.id)}
-                    className="ml-4 flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition"
-                  >
-                    <CheckCircle className="w-5 h-5" />
-                    Confirmar Rota
-                  </button>
-                </div>
-              </div>
-            ))}
+                ))}
+              </>
+            )}
           </div>
         )}
       </div>
@@ -242,14 +373,43 @@ function ConfirmarModal({ rotaId, onClose }: { rotaId: string; onClose: () => vo
     horaFimReal: '',
   });
 
+  const formatTimeInput = (value?: string | null) => {
+    if (!value) return '';
+    const parsed = new Date(value);
+    if (!Number.isNaN(parsed.getTime())) {
+      const hours = String(parsed.getHours()).padStart(2, '0');
+      const minutes = String(parsed.getMinutes()).padStart(2, '0');
+      return `${hours}:${minutes}`;
+    }
+
+    if (typeof value === 'string' && value.includes(':')) {
+      return value.substring(0, 5);
+    }
+
+    return '';
+  };
+
   // Buscar dados da rota
-  const { data: rota } = useQuery({
+  const { data: rota, isFetching } = useQuery({
     queryKey: ['rota', rotaId],
     queryFn: async () => {
       const response = await api.get(`/rotas/${rotaId}`);
-      return response.data;
+      return response.data?.data || response.data;
     },
   });
+
+  useEffect(() => {
+    if (!rota) return;
+
+    setFormData({
+      codigoRota: rota.codigoRota || '',
+      qtdePacotes: rota.qtdePacotes ?? 0,
+      qtdeLocais: rota.qtdeLocais ?? 0,
+      qtdeParadas: rota.qtdeParadas ?? 0,
+      horaInicioReal: formatTimeInput(rota.horaInicioReal),
+      horaFimReal: formatTimeInput(rota.horaFimReal),
+    });
+  }, [rota]);
 
   const confirmarMutation = useMutation({
     mutationFn: async (data: any) => {
