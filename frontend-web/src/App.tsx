@@ -220,17 +220,7 @@ function AppRoutes() {
         {/* ========================================
             ROTAS DO MOTORISTA
             ======================================== */}
-        
-        {/* ✅ NOVA ROTA: Dashboard do Motorista (SEM Layout) */}
-        <Route
-          path="/motorista/dashboard"
-          element={
-            <PrivateRoute allowedProfiles={['MOTORISTA']}>
-              <DashboardMotorista />
-            </PrivateRoute>
-          }
-        />
-        
+
         {/* Rotas do Motorista (COM Layout) */}
         <Route
           path="/motorista/*"
@@ -240,6 +230,7 @@ function AppRoutes() {
             </PrivateRoute>
           }
         >
+          <Route path="dashboard" element={<DashboardMotorista />} />
           <Route path="disponibilidade" element={<DisponibilidadeMotorista />} />
           <Route path="rotas" element={<RotasMotorista />} />
           <Route path="perfil" element={<PerfilMotorista />} />
