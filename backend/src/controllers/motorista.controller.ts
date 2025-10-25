@@ -164,16 +164,24 @@ class MotoristaController {
                 ? false
                 : undefined,
         status: statusMotorista,
-        numeroContrato: sanitizeString(dados.numeroContrato),
+        numeroContrato: sanitizeString(dados.numeroContrato) ?? undefined,
         dataAssinatura: toDateOrUndefined(dados.dataAssinatura),
         dataVigenciaInicial: toDateOrUndefined(dados.dataVigenciaInicial),
         cnpjMEI: sanitizeString(dados.cnpjMEI)?.replace(/\D/g, '') ?? undefined,
-        razaoSocialMEI: sanitizeString(dados.razaoSocialMEI),
+        razaoSocialMEI: sanitizeString(dados.razaoSocialMEI) ?? undefined,
       };
+
+      const forwarded = req.headers['x-forwarded-for'];
+      const forwardedIp = Array.isArray(forwarded)
+        ? forwarded[0]
+        : typeof forwarded === 'string'
+          ? forwarded.split(',')[0]?.trim()
+          : undefined;
+      const resolvedIp = (typeof req.ip === 'string' && req.ip.length > 0 ? req.ip : undefined) ?? forwardedIp ?? 'unknown';
 
       const auditData = {
         usuarioId: req.user?.id ?? 'sistema',
-        ip: req.ip,
+        ip: resolvedIp,
         dispositivo:
           typeof req.headers['user-agent'] === 'string'
             ? req.headers['user-agent']
@@ -230,9 +238,17 @@ class MotoristaController {
       const importados: Array<{ linha: number; nome: string; email: string }> = [];
       const ignorados: Array<{ linha: number; motivo: string }> = [];
 
+      const forwarded = req.headers['x-forwarded-for'];
+      const forwardedIp = Array.isArray(forwarded)
+        ? forwarded[0]
+        : typeof forwarded === 'string'
+          ? forwarded.split(',')[0]?.trim()
+          : undefined;
+      const resolvedIp = (typeof req.ip === 'string' && req.ip.length > 0 ? req.ip : undefined) ?? forwardedIp ?? 'unknown';
+
       const auditData = {
         usuarioId: req.user?.id ?? 'sistema',
-        ip: req.ip,
+        ip: resolvedIp,
         dispositivo:
           typeof req.headers['user-agent'] === 'string'
             ? req.headers['user-agent']

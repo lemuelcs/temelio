@@ -1,7 +1,9 @@
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 
 const isProduction = process.env.NODE_ENV === 'production';
-const logLevels = isProduction ? ['error'] : ['query', 'warn', 'error'];
+const logLevels: (Prisma.LogLevel | Prisma.LogDefinition)[] = isProduction
+  ? ['error']
+  : ['query', 'warn', 'error'];
 
 declare global {
   // eslint-disable-next-line no-var

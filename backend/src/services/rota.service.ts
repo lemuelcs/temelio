@@ -245,7 +245,7 @@ class RotaService {
         throw new AppError('Rota não encontrada', 404);
       }
 
-      if (!statusPermitidos.includes(rota.status as StatusRota)) {
+      if (!statusPermitidos.includes(rota.status as (typeof statusPermitidos)[number])) {
         throw new AppError('A rota selecionada não está disponível para oferta', 400);
       }
 
