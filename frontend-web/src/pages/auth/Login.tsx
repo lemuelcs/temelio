@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
-import { Truck, AlertCircle } from 'lucide-react';
+import { AlertCircle } from 'lucide-react';
+import logoTemelio from '../../assets/logo-temelio.png';
+
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -42,11 +44,9 @@ export default function Login() {
       <div className="max-w-md w-full">
         {/* Logo e Título */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-600 rounded-full mb-4">
-            <Truck className="w-8 h-8 text-white" />
-          </div>
-          <h1 className="text-3xl font-bold text-gray-900">Sistema de Gestão</h1>
-          <p className="text-gray-600 mt-2">Transportadora - Última Milha</p>
+          <img src={logoTemelio} alt="Logo Temelio" className="w-[120px] h-[120px] object-contain mx-auto"/>
+          <h1 className="text-3xl font-bold text-gray-900">Temelio</h1>
+          <h3 className="text-gray-600">Sistema de Gestão</h3>
         </div>
 
         {/* Card de Login */}
@@ -97,7 +97,7 @@ export default function Login() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition"
+              className="w-full bg-orange-500 text-white py-3 px-4 rounded-lg font-medium hover:bg-orange-600 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition"
             >
               {loading ? 'Entrando...' : 'Entrar'}
             </button>
