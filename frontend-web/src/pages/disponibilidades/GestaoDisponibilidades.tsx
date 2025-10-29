@@ -12,10 +12,11 @@ interface Disponibilidade {
   id: string;
   motoristaId: string;
   data: string;
-  turno: 'MANHA' | 'TARDE' | 'NOITE';
+  ciclo: 'MANHA' | 'TARDE' | 'NOITE';
   disponivel: boolean;
   motorista?: {
     nome: string;
+    nomeCompleto: string;
     tipoVeiculo: string;
   };
 }
@@ -23,7 +24,7 @@ interface Disponibilidade {
 export default function Disponibilidades() {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [filterMotorista, setFilterMotorista] = useState('');
-  const [filterTurno, setFilterTurno] = useState('');
+  const [filterCiclo, setFilterCiclo] = useState('');
   const [viewMode, setViewMode] = useState<'week' | 'motorista'>('week');
 
   const weekStart = startOfWeek(selectedDate, { weekStartsOn: 1 });
@@ -72,21 +73,21 @@ export default function Disponibilidades() {
     },
   });
 
-  const getTurnoLabel = (turno: string) => {
+  const getCicloLabel = (ciclo: string) => {
     const labels = {
       MANHA: 'Manhã (06:00-14:00)',
       TARDE: 'Tarde (14:00-22:00)',
       NOITE: 'Noite (22:00-06:00)',
     };
-    return labels[turno as keyof typeof labels] || turno;
+    return labels[ciclo as keyof typeof labels] || ciclo;
   };
 
-  const getDisponibilidadeStatus = (data: Date, turno: string, motoristaId?: string) => {
+  const getDisponibilidadeStatus = (data: Date, ciclo: string, motoristaId?: string) => {
     const disp = disponibilidades.filter((d: Disponibilidade) => {
       const matchesDate = isSameDay(new Date(d.data), data);
-      const matchesTurno = d.turno === turno;
+      const matchesCiclo = d.ciclo === ciclo;
       const matchesMotorista = !motoristaId || d.motoristaId === motoristaId;
-      return matchesDate && matchesTurno && matchesMotorista && d.disponivel;
+      return matchesDate && matchesCiclo && matchesMotorista && d.disponivel;
     });
     return disp.length;
   };
@@ -163,17 +164,17 @@ export default function Disponibilidades() {
             </select>
           </div>
 
-          {/* Filtro de Turno */}
+          {/* Filtro de Ciclo */}
           <div className="flex-1">
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Turno
+              Ciclo
             </label>
             <select
-              value={filterTurno}
-              onChange={(e) => setFilterTurno(e.target.value)}
+              value={filterCiclo}
+              onChange={(e) => setFilterCiclo(e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
-              <option value="">Todos os turnos</option>
+              <option value="">Todos os ciclos</option>
               <option value="MANHA">Manhã</option>
               <option value="TARDE">Tarde</option>
               <option value="NOITE">Noite</option>
@@ -244,16 +245,16 @@ export default function Disponibilidades() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
-                  {['MANHA', 'TARDE', 'NOITE'].map((turno) => {
-                    if (filterTurno && turno !== filterTurno) return null;
-                    
+                  {['MANHA', 'TARDE', 'NOITE'].map((ciclo) => {
+                    if (filterCiclo && ciclo !== filterCiclo) return null;
+
                     return (
-                      <tr key={turno}>
+                      <tr key={ciclo}>
                         <td className="px-4 py-4 font-medium text-gray-900">
-                          {getTurnoLabel(turno)}
+                          {getCicloLabel(ciclo)}
                         </td>
                         {weekDays.map((day) => {
-                          const count = getDisponibilidadeStatus(day, turno, filterMotorista);
+                          const count = getDisponibilidadeStatus(day, ciclo, filterMotorista);
                           return (
                             <td key={day.toString()} className="px-4 py-4 text-center">
                               <div className={`inline-flex items-center justify-center w-12 h-12 rounded-full ${
@@ -336,23 +337,23 @@ export default function Disponibilidades() {
                             {format(day, 'EEEE, dd/MM', { locale: ptBR })}
                           </div>
                           <div className="flex gap-2">
-                            {['MANHA', 'TARDE', 'NOITE'].map((turno) => {
+                            {['MANHA', 'TARDE', 'NOITE'].map((ciclo) => {
                               const isDisp = dayDisp.some(
-                                (d: Disponibilidade) => d.turno === turno && d.disponivel
+                                (d: Disponibilidade) => d.ciclo === ciclo && d.disponivel
                               );
-                              
-                              if (filterTurno && turno !== filterTurno) return null;
+
+                              if (filterCiclo && ciclo !== filterCiclo) return null;
 
                               return (
                                 <div
-                                  key={turno}
+                                  key={ciclo}
                                   className={`flex-1 px-3 py-2 rounded-lg text-center text-sm ${
                                     isDisp
                                       ? 'bg-green-100 text-green-800'
                                       : 'bg-gray-100 text-gray-400'
                                   }`}
                                 >
-                                  {turno === 'MANHA' ? 'M' : turno === 'TARDE' ? 'T' : 'N'}
+                                  {ciclo === 'MANHA' ? 'M' : ciclo === 'TARDE' ? 'T' : 'N'}
                                 </div>
                               );
                             })}
