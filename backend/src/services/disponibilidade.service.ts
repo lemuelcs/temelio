@@ -418,7 +418,13 @@ class DisponibilidadeService {
         motoristaId: true,
         data: true,
         ciclo: true,
-        disponivel: true
+        disponivel: true,
+        motorista: {
+          select: {
+            nomeCompleto: true,
+            tipoVeiculo: true
+          }
+        }
       },
       orderBy: [
         { data: 'asc' },

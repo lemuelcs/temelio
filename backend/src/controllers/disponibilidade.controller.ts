@@ -380,7 +380,7 @@ class DisponibilidadeController {
       const { dataInicio, dataFim, motoristaId, ciclo, disponivel } = req.query;
 
       const filtros: any = {};
-      
+
       if (dataInicio) filtros.dataInicio = new Date(dataInicio as string);
       if (dataFim) filtros.dataFim = new Date(dataFim as string);
       if (disponivel !== undefined) filtros.disponivel = disponivel === 'true';
@@ -398,10 +398,36 @@ class DisponibilidadeController {
         });
       }
 
+      // Se dataInicio e dataFim forem fornecidos, buscar por intervalo
+      if (dataInicio && dataFim) {
+        const inicio = new Date(`${dataInicio as string}T00:00:00Z`);
+        const fim = new Date(`${dataFim as string}T23:59:59Z`);
+
+        if (Number.isNaN(inicio.getTime()) || Number.isNaN(fim.getTime())) {
+          return res.status(400).json({
+            success: false,
+            message: 'Datas inválidas fornecidas'
+          });
+        }
+
+        const apenasDisponiveis = disponivel === undefined ? false : disponivel === 'true';
+
+        const disponibilidades = await disponibilidadeService.buscarIntervalo(
+          inicio,
+          fim,
+          apenasDisponiveis
+        );
+
+        return res.json({
+          success: true,
+          data: disponibilidades
+        });
+      }
+
       // Caso contrário, retornar erro informativo
       return res.status(400).json({
         success: false,
-        message: 'Para listar todas, utilize o endpoint /resumo com filtros de data'
+        message: 'Forneça motoristaId ou dataInicio/dataFim para consultar disponibilidades'
       });
     } catch (error) {
       next(error);
