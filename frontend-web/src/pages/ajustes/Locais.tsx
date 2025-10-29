@@ -1,9 +1,29 @@
 // frontend/src/pages/ajustes/Locais.tsx
 // CORRIGIDO: Tratamento do erro "locais.map is not a function"
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { MapPin, Plus, Edit2, Trash2, Power, PowerOff, Search, RefreshCw, AlertTriangle } from 'lucide-react';
+import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+import markerIcon from 'leaflet/dist/images/marker-icon.png';
+import markerShadow from 'leaflet/dist/images/marker-shadow.png';
 import api from '../../services/api';
+
+// Ajuste padrão para ícones do Leaflet no Vite/React
+const defaultLeafletIcon = L.icon({
+  iconUrl: markerIcon,
+  shadowUrl: markerShadow,
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+});
+
+if (typeof window !== 'undefined') {
+  L.Marker.prototype.options.icon = defaultLeafletIcon;
+}
+
+// Centro padrão do mapa (São Paulo)
+const DEFAULT_MAP_CENTER: [number, number] = [-23.55052, -46.633308];
 
 interface Local {
   id: string;
@@ -11,9 +31,10 @@ interface Local {
   nome: string;
   endereco: string;
   cep: string;
-  latitude: number;
-  longitude: number;
+  latitude: number | null;
+  longitude: number | null;
   cidade: string;
+  bairro?: string;
   uf: string;
   ativo: boolean;
   createdAt: string;
@@ -25,10 +46,53 @@ interface FormData {
   nome: string;
   endereco: string;
   cep: string;
-  latitude: number;
-  longitude: number;
+  latitude: string;
+  longitude: string;
   cidade: string;
+  bairro: string;
   uf: string;
+}
+
+// Componente de seleção de localização no mapa
+function LocationSelector({
+  position,
+  onSelect,
+}: {
+  position: [number, number] | null;
+  onSelect: (lat: number, lng: number) => void;
+}) {
+  const LocationMarker = () => {
+    const map = useMapEvents({
+      click(event) {
+        onSelect(event.latlng.lat, event.latlng.lng);
+      },
+    });
+
+    useEffect(() => {
+      if (position) {
+        map.setView(position);
+      }
+    }, [position, map]);
+
+    return position ? <Marker position={position} /> : null;
+  };
+
+  const center = position ?? DEFAULT_MAP_CENTER;
+
+  return (
+    <MapContainer
+      center={center}
+      zoom={13}
+      style={{ height: '100%', width: '100%' }}
+      scrollWheelZoom
+    >
+      <TileLayer
+        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+      />
+      <LocationMarker />
+    </MapContainer>
+  );
 }
 
 const Locais: React.FC = () => {
@@ -48,9 +112,10 @@ const Locais: React.FC = () => {
     nome: '',
     endereco: '',
     cep: '',
-    latitude: 0,
-    longitude: 0,
+    latitude: '',
+    longitude: '',
     cidade: '',
+    bairro: '',
     uf: ''
   });
 
@@ -108,9 +173,10 @@ const Locais: React.FC = () => {
       nome: '',
       endereco: '',
       cep: '',
-      latitude: 0,
-      longitude: 0,
+      latitude: '',
+      longitude: '',
       cidade: '',
+      bairro: '',
       uf: ''
     });
     setShowModal(true);
@@ -124,12 +190,20 @@ const Locais: React.FC = () => {
       nome: local.nome,
       endereco: local.endereco,
       cep: local.cep,
-      latitude: local.latitude,
-      longitude: local.longitude,
+      latitude: local.latitude !== null ? String(local.latitude) : '',
+      longitude: local.longitude !== null ? String(local.longitude) : '',
       cidade: local.cidade,
+      bairro: local.bairro || '',
       uf: local.uf
     });
     setShowModal(true);
+  };
+
+  // Converter valores de string para número ou null
+  const parseNumberOrNull = (value: string) => {
+    if (!value || value.trim() === '') return null;
+    const num = parseFloat(value);
+    return isNaN(num) ? null : num;
   };
 
   // Salvar (criar ou atualizar)
@@ -137,13 +211,21 @@ const Locais: React.FC = () => {
     e.preventDefault();
 
     try {
+      // Preparar payload com conversões necessárias
+      const payload = {
+        ...formData,
+        latitude: parseNumberOrNull(formData.latitude),
+        longitude: parseNumberOrNull(formData.longitude),
+        bairro: formData.bairro.trim() || undefined, // Enviar undefined se vazio
+      };
+
       if (editingId) {
         // Atualizar
-        await api.put(`/locais/${editingId}`, formData);
+        await api.put(`/locais/${editingId}`, payload);
         alert('Local atualizado com sucesso!');
       } else {
         // Criar
-        await api.post('/locais', formData);
+        await api.post('/locais', payload);
         alert('Local cadastrado com sucesso!');
       }
 
@@ -154,6 +236,16 @@ const Locais: React.FC = () => {
       alert(error.response?.data?.message || 'Erro ao salvar local');
     }
   };
+
+  // Posição do marcador no mapa
+  const mapPosition = useMemo<[number, number] | null>(() => {
+    const lat = parseNumberOrNull(formData.latitude);
+    const lng = parseNumberOrNull(formData.longitude);
+    if (lat === null || lng === null) {
+      return null;
+    }
+    return [lat, lng];
+  }, [formData.latitude, formData.longitude]);
 
   // Alternar status
   const handleToggleStatus = async (id: string, ativoAtual: boolean) => {
@@ -455,52 +547,86 @@ const Locais: React.FC = () => {
                   />
                 </div>
 
-                {/* CEP */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    CEP <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.cep}
-                    onChange={handleCEPChange}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
-                    placeholder="00000-000"
-                    maxLength={9}
-                    required
-                  />
+                <div className="grid grid-cols-2 gap-4">
+                  {/* Bairro */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Bairro
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.bairro}
+                      onChange={(e) => setFormData({ ...formData, bairro: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                      placeholder="Ex: Centro"
+                    />
+                  </div>
+
+                  {/* CEP */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      CEP <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.cep}
+                      onChange={handleCEPChange}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                      placeholder="00000-000"
+                      maxLength={9}
+                      required
+                    />
+                  </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                  {/* Latitude */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Latitude <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="number"
-                      step="any"
-                      value={formData.latitude}
-                      onChange={(e) => setFormData({ ...formData, latitude: parseFloat(e.target.value) || 0 })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
-                      required
+                {/* Localização no Mapa */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Localização (Latitude e Longitude)
+                  </label>
+                  <div className="h-64 rounded-lg overflow-hidden border border-gray-300 mb-3">
+                    <LocationSelector
+                      position={mapPosition}
+                      onSelect={(lat, lng) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          latitude: lat.toFixed(8),
+                          longitude: lng.toFixed(8),
+                        }))
+                      }
                     />
                   </div>
-
-                  {/* Longitude */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Longitude <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="number"
-                      step="any"
-                      value={formData.longitude}
-                      onChange={(e) => setFormData({ ...formData, longitude: parseFloat(e.target.value) || 0 })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
-                      required
-                    />
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Latitude
+                      </label>
+                      <input
+                        type="number"
+                        step="0.00000001"
+                        value={formData.latitude}
+                        onChange={(e) => setFormData({ ...formData, latitude: e.target.value })}
+                        placeholder="-23.550520"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Longitude
+                      </label>
+                      <input
+                        type="number"
+                        step="0.00000001"
+                        value={formData.longitude}
+                        onChange={(e) => setFormData({ ...formData, longitude: e.target.value })}
+                        placeholder="-46.633308"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
                   </div>
+                  <p className="text-xs text-gray-500 mt-2">
+                    Clique no mapa para selecionar a localização ou ajuste as coordenadas manualmente.
+                  </p>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
