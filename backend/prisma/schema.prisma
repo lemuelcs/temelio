@@ -456,7 +456,7 @@ model TabelaPreco {
 
 model AuditLog {
   id          String   @id @default(cuid())
-  usuarioId   String
+  usuarioId   String?
   acao        String   @db.VarChar(100)
   entidade    String   @db.VarChar(50)
   entidadeId  String?
@@ -466,8 +466,8 @@ model AuditLog {
   latitude    Decimal? @db.Decimal(10, 8)
   longitude   Decimal? @db.Decimal(11, 8)
   createdAt   DateTime @default(now())
-  
-  usuario     Usuario  @relation(fields: [usuarioId], references: [id])
+
+  usuario     Usuario?  @relation(fields: [usuarioId], references: [id])
 
   @@index([entidade, entidadeId])
   @@index([usuarioId, createdAt])

@@ -85,7 +85,7 @@ class UsuarioService {
 
       return usuario;
     } catch (error) {
-      logger.error('Erro ao criar usuário:', error as Error);
+      logger.error(error, 'Erro ao criar usuário');
       throw error;
     }
   }
@@ -157,7 +157,7 @@ class UsuarioService {
 
       return usuario;
     } catch (error) {
-      logger.error('Erro ao atualizar usuário:', error as Error);
+      logger.error(error, 'Erro ao atualizar usuário');
       throw error;
     }
   }
@@ -208,7 +208,7 @@ class UsuarioService {
 
       logger.info(`Senha alterada para usuário: ${id}`);
     } catch (error) {
-      logger.error('Erro ao alterar senha:', error as Error);
+      logger.error(error, 'Erro ao alterar senha');
       throw error;
     }
   }
@@ -285,7 +285,7 @@ class UsuarioService {
 
       logger.info(`Usuário excluído: ${id}`);
     } catch (error) {
-      logger.error('Erro ao excluir usuário:', error as Error);
+      logger.error(error, 'Erro ao excluir usuário');
       throw error;
     }
   }
@@ -337,7 +337,7 @@ class UsuarioService {
 
       return usuario;
     } catch (error) {
-      logger.error('Erro ao alterar status do usuário:', error as Error);
+      logger.error(error, 'Erro ao alterar status do usuário');
       throw error;
     }
   }
