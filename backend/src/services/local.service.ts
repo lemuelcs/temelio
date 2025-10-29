@@ -86,12 +86,17 @@ class LocalService {
   async atualizar(id: string, data: Partial<CriarLocalData>) {
     await this.buscarPorId(id);
 
+    // Preparar dados para atualização, evitando undefined explícito
+    const dadosAtualizacao: any = { ...data };
+
+    // Converter uf para maiúsculas se presente
+    if (dadosAtualizacao.uf) {
+      dadosAtualizacao.uf = dadosAtualizacao.uf.toUpperCase();
+    }
+
     const localAtualizado = await prisma.local.update({
       where: { id },
-      data: {
-        ...data,
-        uf: data.uf ? data.uf.toUpperCase() : undefined
-      }
+      data: dadosAtualizacao
     });
 
     return localAtualizado;
