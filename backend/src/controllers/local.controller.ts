@@ -87,14 +87,14 @@ class LocalController {
 
       const dados: any = {};
 
-      if (codigo) dados.codigo = codigo;
-      if (nome) dados.nome = nome;
-      if (endereco) dados.endereco = endereco;
-      if (cep) dados.cep = cep;
-      if (latitude) dados.latitude = Number(latitude);
-      if (longitude) dados.longitude = Number(longitude);
-      if (cidade) dados.cidade = cidade;
-      if (uf) {
+      if (codigo !== undefined) dados.codigo = codigo;
+      if (nome !== undefined) dados.nome = nome;
+      if (endereco !== undefined) dados.endereco = endereco;
+      if (cep !== undefined) dados.cep = cep;
+      if (latitude !== undefined) dados.latitude = Number(latitude);
+      if (longitude !== undefined) dados.longitude = Number(longitude);
+      if (cidade !== undefined) dados.cidade = cidade;
+      if (uf !== undefined) {
         if (uf.length !== 2) {
           throw new AppError('UF deve ter 2 caracteres', 400);
         }
