@@ -18,6 +18,7 @@ import GestaoDisponibilidadesResumo from './pages/disponibilidades/GestaoDisponi
 import Alertas from './pages/alertas/Alertas';
 import Locais from './pages/ajustes/Locais';
 import Precos from './pages/ajustes/Precos';
+import Usuarios from './pages/ajustes/Usuarios';
 
 // Layout
 import Layout from './components/layout/Layout';
@@ -239,6 +240,16 @@ function AppRoutes() {
             <PrivateRoute allowedProfiles={['ADMINISTRADOR', 'DESPACHANTE_PLANEJADOR']}>
               <Layout>
                 <Locais />
+              </Layout>
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/ajustes/usuarios"
+          element={
+            <PrivateRoute allowedProfiles={['ADMINISTRADOR']}>
+              <Layout>
+                <Usuarios />
               </Layout>
             </PrivateRoute>
           }

@@ -45,6 +45,7 @@ const disponibilidadesSubmenu = [
 const ajustesSubmenu = [
   { path: '/ajustes/precos', icon: DollarSign, label: 'Preços' },
   { path: '/ajustes/locais', icon: MapPin, label: 'Locais' },
+  { path: '/ajustes/usuarios', icon: Users, label: 'Usuários' },
 ];
 
 const menuItems = [
