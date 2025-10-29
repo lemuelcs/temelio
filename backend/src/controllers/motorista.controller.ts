@@ -304,11 +304,50 @@ class MotoristaController {
       }
 
       const conteudo = arquivo.buffer.toString('utf-8');
-      const registros = parse(conteudo, {
-        columns: true,
-        skip_empty_lines: true,
-        trim: true,
-      }) as Array<Record<string, string>>;
+
+      // Validar formato básico do CSV antes de parsear
+      const linhas = conteudo.split('\n').filter(l => l.trim().length > 0);
+      if (linhas.length < 2) {
+        throw new AppError('Arquivo CSV vazio ou inválido', 400);
+      }
+
+      // Detectar delimitador: tentar vírgula primeiro, depois ponto-e-vírgula
+      const primeiraLinha = linhas[0];
+      const virgulas = (primeiraLinha.match(/,/g) || []).length;
+      const pontoVirgulas = (primeiraLinha.match(/;/g) || []).length;
+      const delimiter = pontoVirgulas > virgulas ? ';' : ',';
+
+      let registros: Array<Record<string, string>>;
+      try {
+        registros = parse(conteudo, {
+          columns: true,
+          skip_empty_lines: true,
+          trim: true,
+          delimiter,
+          relax_column_count: true, // Permite linhas com número diferente de colunas
+          relax_quotes: true, // Permite aspas mal formatadas
+        }) as Array<Record<string, string>>;
+      } catch (parseError: any) {
+        logger.error({ error: parseError.message }, 'Erro ao parsear CSV');
+        throw new AppError(
+          `Erro ao processar arquivo CSV: ${parseError.message}. Verifique se o arquivo está no formato correto com os campos separados por vírgula ou ponto-e-vírgula.`,
+          400
+        );
+      }
+
+      // Validar que há pelo menos os campos obrigatórios no cabeçalho
+      const camposObrigatorios = ['nomeCompleto', 'cpf', 'email', 'celular', 'cidade', 'uf', 'tipoVeiculo', 'propriedadeVeiculo', 'anoFabricacaoVeiculo', 'status'];
+      if (registros.length > 0) {
+        const chavesDisponiveis = Object.keys(registros[0]);
+        const camposFaltando = camposObrigatorios.filter(campo => !chavesDisponiveis.includes(campo));
+
+        if (camposFaltando.length > 0) {
+          throw new AppError(
+            `Campos obrigatórios faltando no arquivo CSV: ${camposFaltando.join(', ')}. Baixe o modelo correto usando o botão "Baixar Modelo".`,
+            400
+          );
+        }
+      }
 
       const importados: Array<{ linha: number; nome: string; email: string }> = [];
       const ignorados: Array<{ linha: number; motivo: string }> = [];
