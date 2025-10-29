@@ -71,7 +71,7 @@ class UsuarioService {
       // Registrar auditoria
       await prisma.auditLog.create({
         data: {
-          usuarioId: auditData.usuarioId,
+          ...(auditData.usuarioId && { usuarioId: auditData.usuarioId }),
           acao: 'CRIAR_USUARIO',
           entidade: 'Usuario',
           entidadeId: usuario.id,
@@ -85,7 +85,7 @@ class UsuarioService {
 
       return usuario;
     } catch (error) {
-      logger.error('Erro ao criar usuário:', error);
+      logger.error('Erro ao criar usuário:', error as Error);
       throw error;
     }
   }
@@ -143,7 +143,7 @@ class UsuarioService {
 
       await prisma.auditLog.create({
         data: {
-          usuarioId: auditData.usuarioId,
+          ...(auditData.usuarioId && { usuarioId: auditData.usuarioId }),
           acao: 'ATUALIZAR_USUARIO',
           entidade: 'Usuario',
           entidadeId: id,
@@ -157,7 +157,7 @@ class UsuarioService {
 
       return usuario;
     } catch (error) {
-      logger.error('Erro ao atualizar usuário:', error);
+      logger.error('Erro ao atualizar usuário:', error as Error);
       throw error;
     }
   }
@@ -196,7 +196,7 @@ class UsuarioService {
       // Registrar auditoria
       await prisma.auditLog.create({
         data: {
-          usuarioId: auditData.usuarioId,
+          ...(auditData.usuarioId && { usuarioId: auditData.usuarioId }),
           acao: 'ALTERAR_SENHA',
           entidade: 'Usuario',
           entidadeId: id,
@@ -208,7 +208,7 @@ class UsuarioService {
 
       logger.info(`Senha alterada para usuário: ${id}`);
     } catch (error) {
-      logger.error('Erro ao alterar senha:', error);
+      logger.error('Erro ao alterar senha:', error as Error);
       throw error;
     }
   }
@@ -285,7 +285,7 @@ class UsuarioService {
 
       logger.info(`Usuário excluído: ${id}`);
     } catch (error) {
-      logger.error('Erro ao excluir usuário:', error);
+      logger.error('Erro ao excluir usuário:', error as Error);
       throw error;
     }
   }
@@ -323,7 +323,7 @@ class UsuarioService {
       // Registrar auditoria
       await prisma.auditLog.create({
         data: {
-          usuarioId: auditData.usuarioId,
+          ...(auditData.usuarioId && { usuarioId: auditData.usuarioId }),
           acao: ativo ? 'ATIVAR_USUARIO' : 'DESATIVAR_USUARIO',
           entidade: 'Usuario',
           entidadeId: id,
@@ -337,7 +337,7 @@ class UsuarioService {
 
       return usuario;
     } catch (error) {
-      logger.error('Erro ao alterar status do usuário:', error);
+      logger.error('Erro ao alterar status do usuário:', error as Error);
       throw error;
     }
   }
