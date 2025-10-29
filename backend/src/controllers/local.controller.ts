@@ -3,6 +3,10 @@ import localService from '../services/local.service';
 import { AppError } from '../middlewares/error.middleware';
 
 class LocalController {
+  // Helper: Remove formatação do CEP (mantém apenas números)
+  private limparCEP(cep: string): string {
+    return cep.replace(/\D/g, '');
+  }
   // POST /api/locais
   async criar(req: Request, res: Response, next: NextFunction) {
     try {
@@ -21,7 +25,7 @@ class LocalController {
         codigo,
         nome,
         endereco,
-        cep,
+        cep: cep ? this.limparCEP(cep) : cep,
         latitude: Number(latitude),
         longitude: Number(longitude),
         cidade,
@@ -83,16 +87,17 @@ class LocalController {
   async atualizar(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
-      const { codigo, nome, endereco, cep, latitude, longitude, cidade, uf } = req.body;
+      const { nome, endereco, cep, latitude, longitude, cidade, uf } = req.body;
 
       const dados: any = {};
 
-      if (codigo !== undefined) dados.codigo = codigo;
+      // Nota: código não pode ser atualizado pois é UNIQUE e serve como identificador
       if (nome !== undefined) dados.nome = nome;
       if (endereco !== undefined) dados.endereco = endereco;
-      if (cep !== undefined) dados.cep = cep;
-      if (latitude !== undefined) dados.latitude = Number(latitude);
-      if (longitude !== undefined) dados.longitude = Number(longitude);
+      if (cep !== undefined) dados.cep = this.limparCEP(cep);
+      // Prisma converte automaticamente para Decimal, não precisa converter para Number
+      if (latitude !== undefined) dados.latitude = latitude;
+      if (longitude !== undefined) dados.longitude = longitude;
       if (cidade !== undefined) dados.cidade = cidade;
       if (uf !== undefined) {
         if (uf.length !== 2) {
