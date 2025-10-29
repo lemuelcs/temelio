@@ -26,12 +26,15 @@ class LocalService {
       throw new AppError('Código de local já cadastrado', 400);
     }
 
+    // Limpar CEP removendo caracteres não numéricos
+    const cepLimpo = cep ? cep.replace(/\D/g, '') : null;
+
     const local = await prisma.local.create({
       data: {
         codigo,
         nome,
         endereco,
-        cep, 
+        cep: cepLimpo,
         latitude,
         longitude,
         cidade,
@@ -92,6 +95,11 @@ class LocalService {
     // Converter uf para maiúsculas se presente
     if (dadosAtualizacao.uf) {
       dadosAtualizacao.uf = dadosAtualizacao.uf.toUpperCase();
+    }
+
+    // Limpar CEP removendo caracteres não numéricos se presente
+    if (dadosAtualizacao.cep) {
+      dadosAtualizacao.cep = dadosAtualizacao.cep.replace(/\D/g, '');
     }
 
     const localAtualizado = await prisma.local.update({

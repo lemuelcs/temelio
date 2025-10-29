@@ -158,13 +158,16 @@ class MotoristaService {
     const senhaEmUso = senha ?? DEFAULT_TEMP_PASSWORD;
     const senhaHash = await bcrypt.hash(senhaEmUso, 10);
 
+    // Limpar CEP removendo caracteres não numéricos
+    const cepLimpo = cep ? cep.replace(/\D/g, '') : null;
+
     // Criar motorista com relacionamentos
     const motorista = await prisma.motorista.create({
       data: {
         transporterId: transporterId || null,
         nomeCompleto,
         celular,
-        cep: cep || null,
+        cep: cepLimpo,
         logradouro: logradouro || null,
         numero: numero || null,
         complemento: complemento || null,
@@ -365,7 +368,8 @@ class MotoristaService {
 
     if (data.nomeCompleto !== undefined) dadosParaAtualizar.nomeCompleto = data.nomeCompleto;
     if (data.celular !== undefined) dadosParaAtualizar.celular = data.celular;
-    if (data.cep !== undefined) dadosParaAtualizar.cep = data.cep;
+    // Limpar CEP removendo caracteres não numéricos se presente
+    if (data.cep !== undefined) dadosParaAtualizar.cep = data.cep ? data.cep.replace(/\D/g, '') : null;
     if (data.logradouro !== undefined) dadosParaAtualizar.logradouro = data.logradouro;
     if (data.numero !== undefined) dadosParaAtualizar.numero = data.numero;
     if (data.complemento !== undefined) dadosParaAtualizar.complemento = data.complemento;
