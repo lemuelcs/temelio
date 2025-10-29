@@ -207,10 +207,85 @@ class MotoristaController {
   }
 
   async baixarModeloImportacao(_req: Request, res: Response) {
-    const cabecalho =
-      'nomeCompleto,cpf,email,celular,tipoVeiculo,propriedadeVeiculo,cidade,uf,status\n';
-    const exemplo =
-      'João da Silva,12345678901,joao.silva@example.com,11999998888,MOTOCICLETA,PROPRIO,São Paulo,SP,ATIVO\n';
+    // Template expandido com todos os campos disponíveis no formulário
+    const cabecalho = [
+      // Campos obrigatórios
+      'nomeCompleto',
+      'cpf',
+      'email',
+      'celular',
+      'cidade',
+      'uf',
+      'tipoVeiculo',
+      'propriedadeVeiculo',
+      'anoFabricacaoVeiculo',
+      'status',
+      // Dados pessoais opcionais
+      'transporterId',
+      'dataNascimento',
+      'chavePix',
+      // Endereço
+      'cep',
+      'logradouro',
+      'numero',
+      'complemento',
+      'bairro',
+      // Veículo
+      'placaVeiculo',
+      // Documentos
+      'numeroCNH',
+      'validadeCNH',
+      'anoLicenciamento',
+      'dataVerificacaoBRK',
+      'proximaVerificacaoBRK',
+      'statusBRK',
+      // Contrato e MEI
+      'numeroContrato',
+      'dataAssinatura',
+      'dataVigenciaInicial',
+      'cnpjMEI',
+      'razaoSocialMEI',
+    ].join(',') + '\n';
+
+    // Exemplo com todos os campos preenchidos
+    const exemplo = [
+      // Campos obrigatórios
+      'João da Silva',                    // nomeCompleto
+      '12345678901',                       // cpf
+      'joao.silva@example.com',           // email
+      '11999998888',                       // celular
+      'São Paulo',                         // cidade
+      'SP',                                // uf
+      'CARGO_VAN',                         // tipoVeiculo (MOTOCICLETA, CARRO_PASSEIO, CARGO_VAN, LARGE_VAN)
+      'PROPRIO',                           // propriedadeVeiculo (PROPRIO, TRANSPORTADORA)
+      '2020',                              // anoFabricacaoVeiculo
+      'ONBOARDING',                        // status (ONBOARDING, ATIVO, INATIVO, SUSPENSO, EXCLUIDO)
+      // Dados pessoais opcionais
+      '',                                  // transporterId
+      '1990-01-15',                        // dataNascimento (formato: YYYY-MM-DD)
+      '12345678901',                       // chavePix
+      // Endereço
+      '01310100',                          // cep
+      'Av. Paulista',                      // logradouro
+      '1578',                              // numero
+      'Apto 101',                          // complemento
+      'Bela Vista',                        // bairro
+      // Veículo
+      'ABC1D23',                           // placaVeiculo
+      // Documentos
+      '12345678901',                       // numeroCNH
+      '2026-12-31',                        // validadeCNH (formato: YYYY-MM-DD)
+      '2024',                              // anoLicenciamento
+      '2024-01-15',                        // dataVerificacaoBRK (formato: YYYY-MM-DD)
+      '2025-01-15',                        // proximaVerificacaoBRK (formato: YYYY-MM-DD)
+      'true',                              // statusBRK (true ou false)
+      // Contrato e MEI
+      'CONTRATO-2024-001',                 // numeroContrato
+      '2024-01-10',                        // dataAssinatura (formato: YYYY-MM-DD)
+      '2024-01-10',                        // dataVigenciaInicial (formato: YYYY-MM-DD)
+      '12345678000190',                    // cnpjMEI
+      'João da Silva MEI',                 // razaoSocialMEI
+    ].join(',') + '\n';
 
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader(
@@ -285,6 +360,12 @@ class MotoristaController {
             continue;
           }
 
+          const anoFabricacao = toNumberOrNull(linha.anoFabricacaoVeiculo);
+          if (!anoFabricacao) {
+            ignorados.push({ linha: numeroLinha, motivo: 'Ano de fabricação do veículo é obrigatório' });
+            continue;
+          }
+
           const cpfExiste = await prisma.motorista.findUnique({
             where: { cpf },
           });
@@ -328,21 +409,48 @@ class MotoristaController {
 
           const motorista = await motoristaService.criar(
             {
+              // Dados pessoais
               transporterId: sanitizeString(linha.transporterId),
               nomeCompleto,
+              cpf,
+              dataNascimento: toDateOrUndefined(linha.dataNascimento),
+              email,
               celular,
-              cidade: linha.cidade,
-              uf: (linha.uf || '').toUpperCase(),
-              bairro: sanitizeString(linha.bairro),
+              chavePix: sanitizeString(linha.chavePix),
+              // Endereço
               cep: sanitizeString(linha.cep)?.replace(/\D/g, '') ?? null,
               logradouro: sanitizeString(linha.logradouro),
               numero: sanitizeString(linha.numero),
               complemento: sanitizeString(linha.complemento),
-              cpf,
-              email,
-              chavePix: sanitizeString(linha.chavePix),
+              bairro: sanitizeString(linha.bairro),
+              cidade: linha.cidade,
+              uf: (linha.uf || '').toUpperCase(),
+              // Veículo
               tipoVeiculo: tipoVeiculoNormalizado as TipoVeiculo,
               propriedadeVeiculo: propriedadeVeiculoNormalizada as PropriedadeVeiculo,
+              placaVeiculo: sanitizeString(linha.placaVeiculo),
+              anoFabricacaoVeiculo: toNumberOrNull(linha.anoFabricacaoVeiculo) ?? undefined,
+              // Documentos
+              numeroCNH: sanitizeString(linha.numeroCNH),
+              validadeCNH: toDateOrUndefined(linha.validadeCNH),
+              anoLicenciamento: toNumberOrNull(linha.anoLicenciamento) ?? undefined,
+              dataVerificacaoBRK: toDateOrUndefined(linha.dataVerificacaoBRK),
+              proximaVerificacaoBRK: toDateOrUndefined(linha.proximaVerificacaoBRK),
+              statusBRK:
+                typeof linha.statusBRK === 'boolean'
+                  ? linha.statusBRK
+                  : linha.statusBRK === 'true'
+                    ? true
+                    : linha.statusBRK === 'false'
+                      ? false
+                      : undefined,
+              // Contrato e MEI
+              numeroContrato: sanitizeString(linha.numeroContrato) ?? undefined,
+              dataAssinatura: toDateOrUndefined(linha.dataAssinatura),
+              dataVigenciaInicial: toDateOrUndefined(linha.dataVigenciaInicial),
+              cnpjMEI: sanitizeString(linha.cnpjMEI)?.replace(/\D/g, '') ?? undefined,
+              razaoSocialMEI: sanitizeString(linha.razaoSocialMEI) ?? undefined,
+              // Autenticação
               senha: SENHA_TEMPORARIA_PADRAO,
               obrigarAlterarSenha: true,
               status: statusMotorista,
