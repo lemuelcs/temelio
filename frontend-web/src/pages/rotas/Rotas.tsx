@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Search, Edit, Trash2, MapPin, Clock, DollarSign, Calendar } from 'lucide-react';
+import { Plus, Search, Edit, Trash2, MapPin, Clock, DollarSign, Calendar, ListPlus, X } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -182,6 +182,7 @@ function ResgateLocationSelector({
 
 export default function Rotas() {
   const [showModal, setShowModal] = useState(false);
+  const [showLoteModal, setShowLoteModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('');
@@ -385,16 +386,25 @@ export default function Rotas() {
           <h1 className="text-2xl font-bold text-gray-900">Rotas - Ofertas (D-1)</h1>
           <p className="text-gray-600 mt-1">Gerencie as ofertas de rotas para os motoristas</p>
         </div>
-        <button
-          onClick={() => {
-            setEditingId(null);
-            setShowModal(true);
-          }}
-          className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition"
-        >
-          <Plus className="w-5 h-5" />
-          Nova Oferta de Rota
-        </button>
+        <div className="flex gap-3">
+          <button
+            onClick={() => setShowLoteModal(true)}
+            className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition"
+          >
+            <ListPlus className="w-5 h-5" />
+            Adicionar Rotas em Lote
+          </button>
+          <button
+            onClick={() => {
+              setEditingId(null);
+              setShowModal(true);
+            }}
+            className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition"
+          >
+            <Plus className="w-5 h-5" />
+            Nova Oferta de Rota
+          </button>
+        </div>
       </div>
 
       {erroTabelaPrecos && (
@@ -616,6 +626,15 @@ export default function Rotas() {
             setShowModal(false);
             setEditingId(null);
           }}
+        />
+      )}
+
+      {/* Modal de Rotas em Lote */}
+      {showLoteModal && (
+        <RotasLoteModal
+          tabelaPrecos={tabelaPrecos}
+          carregandoTabelaPrecos={carregandoTabelaPrecos}
+          onClose={() => setShowLoteModal(false)}
         />
       )}
     </div>
@@ -1412,6 +1431,507 @@ function RotaModal({
             >
               {saveMutation.isPending ? 'Salvando...' : (isEditing ? 'Salvar Alterações' : 'Criar Oferta')}
             </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// Modal de Criação de Rotas em Lote
+interface RotaLoteLinhaData {
+  id: string;
+  dataRota: string;
+  cicloRota: string;
+  localId: string;
+  tipoVeiculo: string;
+  tamanhoHoras: string;
+  horarios: string; // Formato: "10:00; 10:15; 10:30"
+}
+
+function RotasLoteModal({
+  tabelaPrecos,
+  carregandoTabelaPrecos,
+  onClose,
+}: {
+  tabelaPrecos: TabelaPrecosProcessada | null;
+  carregandoTabelaPrecos: boolean;
+  onClose: () => void;
+}) {
+  const queryClient = useQueryClient();
+
+  const findTabelaInfo = (tipoVeiculo: string, veiculoTransportadora: boolean) => {
+    if (!tabelaPrecos) {
+      return null;
+    }
+
+    const tiposServicoPossiveis = TIPO_VEICULO_TO_SERVICO[tipoVeiculo] || [];
+    const propriedade = veiculoTransportadora ? 'TRANSPORTADORA' : 'PROPRIO';
+
+    for (const tipoServico of tiposServicoPossiveis) {
+      const info = tabelaPrecos.precos?.[tipoServico]?.[propriedade];
+      if (info && info.valorHora > 0) {
+        return {
+          ...info,
+          tipoServico,
+          propriedade,
+        };
+      }
+    }
+
+    return null;
+  };
+
+  const getValorHora = (tipoVeiculo: string, veiculoTransportadora: boolean): number => {
+    if (!tabelaPrecos) {
+      if (veiculoTransportadora) return VALORES_PADRAO.TRANSPORTADORA;
+      return VALORES_PADRAO[tipoVeiculo as keyof typeof VALORES_PADRAO] || 0;
+    }
+
+    const infoEncontrada = findTabelaInfo(tipoVeiculo, veiculoTransportadora);
+    if (infoEncontrada) {
+      return infoEncontrada.valorHora;
+    }
+
+    return VALORES_PADRAO[tipoVeiculo as keyof typeof VALORES_PADRAO] || 0;
+  };
+
+  const getValorKm = (): number => {
+    return tabelaPrecos?.valorKm || VALORES_PADRAO.KM;
+  };
+
+  // Buscar locais
+  const { data: locais = [] } = useQuery({
+    queryKey: ['locais'],
+    queryFn: async () => {
+      const response = await api.get('/locais');
+      const dados = response.data?.data?.locais || response.data?.locais || response.data;
+      return Array.isArray(dados) ? dados : [];
+    },
+  });
+
+  // Encontrar o local DBS5 como padrão
+  const localDBS5 = useMemo(() => {
+    return locais.find((local: any) => local.nome === 'DBS5');
+  }, [locais]);
+
+  const [linhas, setLinhas] = useState<RotaLoteLinhaData[]>([
+    {
+      id: crypto.randomUUID(),
+      dataRota: toLocalDateInput(new Date()),
+      cicloRota: 'CICLO_1',
+      localId: '',
+      tipoVeiculo: 'CARGO_VAN',
+      tamanhoHoras: '8',
+      horarios: '',
+    },
+  ]);
+
+  // Atualizar localId quando DBS5 estiver disponível
+  useEffect(() => {
+    if (localDBS5 && linhas.length > 0 && !linhas[0].localId) {
+      setLinhas(prev => prev.map(linha => ({ ...linha, localId: localDBS5.id })));
+    }
+  }, [localDBS5, linhas]);
+
+  const adicionarLinha = () => {
+    setLinhas(prev => [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        dataRota: toLocalDateInput(new Date()),
+        cicloRota: 'CICLO_1',
+        localId: localDBS5?.id || '',
+        tipoVeiculo: 'CARGO_VAN',
+        tamanhoHoras: '8',
+        horarios: '',
+      },
+    ]);
+  };
+
+  const removerLinha = (id: string) => {
+    if (linhas.length === 1) {
+      alert('É necessário ter pelo menos uma linha!');
+      return;
+    }
+    setLinhas(prev => prev.filter(linha => linha.id !== id));
+  };
+
+  const atualizarLinha = (id: string, campo: keyof RotaLoteLinhaData, valor: string) => {
+    setLinhas(prev =>
+      prev.map(linha =>
+        linha.id === id ? { ...linha, [campo]: valor } : linha
+      )
+    );
+  };
+
+  // Validar horários no formato HH:MM separados por ponto e vírgula
+  const validarHorarios = (horarios: string): { valido: boolean; horariosArray: string[] } => {
+    const horariosLimpos = horarios.trim();
+    if (!horariosLimpos) {
+      return { valido: false, horariosArray: [] };
+    }
+
+    const horariosArray = horariosLimpos
+      .split(';')
+      .map(h => h.trim())
+      .filter(h => h);
+
+    const regexHorario = /^([0-1][0-9]|2[0-3]):[0-5][0-9]$/;
+    const todosValidos = horariosArray.every(h => regexHorario.test(h));
+
+    return { valido: todosValidos, horariosArray };
+  };
+
+  const saveMutation = useMutation({
+    mutationFn: async (linhasParaSalvar: RotaLoteLinhaData[]) => {
+      const rotasParaCriar: any[] = [];
+
+      for (const linha of linhasParaSalvar) {
+        const { valido, horariosArray } = validarHorarios(linha.horarios);
+
+        if (!valido) {
+          throw new Error(`Horários inválidos na linha da data ${formatDatePtBr(linha.dataRota)}`);
+        }
+
+        const quantidadeHorariosInformados = horariosArray.length;
+        const tamanhoHoras = parseInt(linha.tamanhoHoras);
+
+        if (isNaN(tamanhoHoras) || tamanhoHoras <= 0 || tamanhoHoras > 24) {
+          throw new Error(`Quantidade de horas inválida na linha da data ${formatDatePtBr(linha.dataRota)}`);
+        }
+
+        if (quantidadeHorariosInformados === 0) {
+          throw new Error(`Nenhum horário informado na linha da data ${formatDatePtBr(linha.dataRota)}`);
+        }
+
+        // Criar uma rota para cada horário informado
+        for (const horario of horariosArray) {
+          const infoTabela = findTabelaInfo(linha.tipoVeiculo, false);
+          const valorHora = infoTabela?.valorHora ?? getValorHora(linha.tipoVeiculo, false);
+          const valorKm = getValorKm();
+
+          const valorBase = valorHora * tamanhoHoras;
+          const valorProjetado = valorBase;
+          const kmProjetado = 50; // valor padrão
+          const bonusKmProjetado = kmProjetado * valorKm;
+          const valorTotalProjetado = valorProjetado + bonusKmProjetado;
+
+          const payload = {
+            dataRota: new Date(linha.dataRota).toISOString(),
+            horaInicio: `1970-01-01T${horario}:00Z`,
+            horaFim: null,
+            tipoVeiculo: linha.tipoVeiculo,
+            tipoRota: 'ENTREGA',
+            cicloRota: linha.cicloRota,
+            tamanhoHoras: tamanhoHoras,
+            veiculoTransportadora: false,
+            valorHora: valorHora,
+            bonusPorHora: 0,
+            bonusFixo: 0,
+            valorProjetado: valorProjetado,
+            kmProjetado: kmProjetado,
+            valorKm: valorKm,
+            valorTotalRota: valorTotalProjetado,
+            localId: linha.localId,
+            latitudeOrigem: null,
+            longitudeOrigem: null,
+            qtdeParadas: null,
+            qtdeLocais: null,
+            qtdePacotes: null,
+            codigoRota: null,
+            resgateRotaId: null,
+            tabelaPrecosId: infoTabela?.tabelaId ?? null,
+            status: 'DISPONIVEL',
+          };
+
+          rotasParaCriar.push(payload);
+        }
+      }
+
+      // Criar todas as rotas em paralelo
+      const promises = rotasParaCriar.map(rota => api.post('/rotas', rota));
+      await Promise.all(promises);
+
+      return rotasParaCriar.length;
+    },
+    onSuccess: (totalCriadas) => {
+      queryClient.invalidateQueries({ queryKey: ['rotas'] });
+      alert(`${totalCriadas} rotas criadas com sucesso!`);
+      onClose();
+    },
+    onError: (error: any) => {
+      const mensagem = error.message || error.response?.data?.message || 'Erro ao salvar rotas em lote';
+      alert(mensagem);
+      console.error('Erro:', error);
+    },
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+
+    // Validações
+    for (const linha of linhas) {
+      if (!linha.localId) {
+        alert('Todas as linhas devem ter um local selecionado!');
+        return;
+      }
+
+      if (!linha.dataRota) {
+        alert('Todas as linhas devem ter uma data informada!');
+        return;
+      }
+
+      const { valido, horariosArray } = validarHorarios(linha.horarios);
+      if (!valido) {
+        alert(`Horários inválidos na linha da data ${formatDatePtBr(linha.dataRota)}. Use o formato HH:MM separado por ponto e vírgula (ex: 10:00; 10:15; 10:30)`);
+        return;
+      }
+
+      const tamanhoHoras = parseInt(linha.tamanhoHoras);
+      const quantidadeHorariosInformados = horariosArray.length;
+
+      if (isNaN(tamanhoHoras) || tamanhoHoras <= 0) {
+        alert(`Quantidade de horas inválida na linha da data ${formatDatePtBr(linha.dataRota)}`);
+        return;
+      }
+
+      if (quantidadeHorariosInformados === 0) {
+        alert(`Informe pelo menos um horário na linha da data ${formatDatePtBr(linha.dataRota)}`);
+        return;
+      }
+
+      const infoTabela = findTabelaInfo(linha.tipoVeiculo, false);
+      if (!infoTabela) {
+        alert(`Não encontramos tabela de preços para ${linha.tipoVeiculo}. Verifique a tabela de preços da estação DBS5.`);
+        return;
+      }
+    }
+
+    if (carregandoTabelaPrecos) {
+      alert('Aguarde o carregamento da tabela de preços antes de salvar.');
+      return;
+    }
+
+    // Confirmar criação
+    const totalRotas = linhas.reduce((acc, linha) => {
+      const { horariosArray } = validarHorarios(linha.horarios);
+      return acc + horariosArray.length;
+    }, 0);
+
+    if (!window.confirm(`Você está prestes a criar ${totalRotas} rotas. Deseja continuar?`)) {
+      return;
+    }
+
+    saveMutation.mutate(linhas);
+  };
+
+  // Adicionar nova linha automaticamente quando a última linha tiver horários preenchidos
+  useEffect(() => {
+    if (linhas.length > 0) {
+      const ultimaLinha = linhas[linhas.length - 1];
+      if (ultimaLinha.horarios.trim() && linhas.length < 50) {
+        // Limitar a 50 linhas para evitar problemas
+        const timer = setTimeout(() => {
+          adicionarLinha();
+        }, 500);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [linhas]);
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
+      <div className="bg-white rounded-lg max-w-7xl w-full my-8">
+        <div className="p-6 border-b border-gray-200">
+          <div className="flex justify-between items-center">
+            <div>
+              <h2 className="text-xl font-semibold text-gray-900">
+                Adicionar Rotas em Lote
+              </h2>
+              <p className="text-sm text-gray-600 mt-1">
+                Preencha as informações para criar múltiplas rotas de uma vez
+              </p>
+            </div>
+            <button
+              onClick={onClose}
+              className="text-gray-400 hover:text-gray-600 transition"
+            >
+              <X className="w-6 h-6" />
+            </button>
+          </div>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+            <h3 className="text-sm font-medium text-blue-900 mb-2">Instruções</h3>
+            <ul className="text-xs text-blue-800 space-y-1 list-disc list-inside">
+              <li>Preencha cada linha com as informações da rota</li>
+              <li>No campo "Horários", digite todos os horários separados por ponto e vírgula (ex: 10:00; 10:15; 10:30)</li>
+              <li>O sistema criará uma rota para cada horário informado</li>
+              <li>Uma nova linha será adicionada automaticamente ao preencher a última</li>
+              <li>Use o botão "X" para remover uma linha antes de salvar</li>
+            </ul>
+          </div>
+
+          <div className="max-h-[calc(100vh-400px)] overflow-y-auto">
+            <table className="w-full border-collapse">
+              <thead className="bg-gray-50 sticky top-0">
+                <tr>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase border">
+                    Data da Rota
+                  </th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase border">
+                    Ciclo
+                  </th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase border">
+                    Local
+                  </th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase border">
+                    Tipo de Serviço
+                  </th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase border">
+                    Horas
+                  </th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase border">
+                    Horários (HH:MM; HH:MM; ...)
+                  </th>
+                  <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase border">
+                    Ações
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {linhas.map((linha, index) => (
+                  <tr key={linha.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                    <td className="px-3 py-2 border">
+                      <input
+                        type="date"
+                        required
+                        value={linha.dataRota}
+                        onChange={(e) => atualizarLinha(linha.id, 'dataRota', e.target.value)}
+                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      />
+                    </td>
+                    <td className="px-3 py-2 border">
+                      <select
+                        value={linha.cicloRota}
+                        onChange={(e) => atualizarLinha(linha.id, 'cicloRota', e.target.value)}
+                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      >
+                        <option value="CICLO_1">Ciclo 1</option>
+                        <option value="CICLO_2">Ciclo 2</option>
+                        <option value="SAME_DAY">Same Day</option>
+                        <option value="SEM_CICLO">Sem Ciclo</option>
+                      </select>
+                    </td>
+                    <td className="px-3 py-2 border">
+                      <select
+                        value={linha.localId}
+                        onChange={(e) => atualizarLinha(linha.id, 'localId', e.target.value)}
+                        required
+                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      >
+                        <option value="">Selecione</option>
+                        {locais.map((local: any) => (
+                          <option key={local.id} value={local.id}>
+                            {local.nome}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td className="px-3 py-2 border">
+                      <select
+                        value={linha.tipoVeiculo}
+                        onChange={(e) => atualizarLinha(linha.id, 'tipoVeiculo', e.target.value)}
+                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      >
+                        <option value="CARGO_VAN">CARGO_VAN</option>
+                        <option value="LARGE_VAN">LARGE_VAN</option>
+                        <option value="MOTOCICLETA">MOTOCICLETA</option>
+                        <option value="CARRO_PASSEIO">CARRO_PASSEIO</option>
+                      </select>
+                    </td>
+                    <td className="px-3 py-2 border">
+                      <input
+                        type="number"
+                        required
+                        min="1"
+                        max="24"
+                        value={linha.tamanhoHoras}
+                        onChange={(e) => atualizarLinha(linha.id, 'tamanhoHoras', e.target.value)}
+                        className="w-20 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        placeholder="8"
+                      />
+                    </td>
+                    <td className="px-3 py-2 border">
+                      <input
+                        type="text"
+                        required
+                        value={linha.horarios}
+                        onChange={(e) => atualizarLinha(linha.id, 'horarios', e.target.value)}
+                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        placeholder="10:00; 10:15; 10:30"
+                      />
+                      {linha.horarios && (() => {
+                        const { valido, horariosArray } = validarHorarios(linha.horarios);
+                        return (
+                          <div className="text-xs mt-1">
+                            {valido ? (
+                              <span className="text-green-600">
+                                ✓ {horariosArray.length} rota(s) serão criadas
+                              </span>
+                            ) : (
+                              <span className="text-red-600">
+                                ✗ Formato inválido
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </td>
+                    <td className="px-3 py-2 border text-center">
+                      <button
+                        type="button"
+                        onClick={() => removerLinha(linha.id)}
+                        className="p-1 text-red-600 hover:bg-red-50 rounded transition"
+                        title="Remover linha"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="flex justify-between items-center pt-4 border-t border-gray-200">
+            <button
+              type="button"
+              onClick={adicionarLinha}
+              className="flex items-center gap-2 text-blue-600 hover:text-blue-700 text-sm font-medium"
+            >
+              <Plus className="w-4 h-4" />
+              Adicionar nova linha
+            </button>
+
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={saveMutation.isPending || carregandoTabelaPrecos}
+                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition disabled:opacity-50"
+              >
+                {saveMutation.isPending ? 'Criando rotas...' : 'Criar Rotas'}
+              </button>
+            </div>
           </div>
         </form>
       </div>
