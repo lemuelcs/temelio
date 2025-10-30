@@ -591,6 +591,26 @@ export default function RotasAlocacao() {
 
   const isLoading = loadingRotas || loadingMotoristas;
 
+  // Agrupar rotas por local de origem
+  const rotasPorLocal = useMemo(() => {
+    const grupos: Record<string, Rota[]> = {};
+
+    rotas.forEach((rota) => {
+      const nomeLocal = rota.local?.nome || 'Sem Local';
+      if (!grupos[nomeLocal]) {
+        grupos[nomeLocal] = [];
+      }
+      grupos[nomeLocal].push(rota);
+    });
+
+    return grupos;
+  }, [rotas]);
+
+  // Obter locais ordenados alfabeticamente (apenas com rotas)
+  const locaisComRotas = useMemo(() => {
+    return Object.keys(rotasPorLocal).sort();
+  }, [rotasPorLocal]);
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -724,21 +744,35 @@ export default function RotasAlocacao() {
         </div>
       </div>
 
-      {/* Lista de Rotas */}
-      <div className="bg-white rounded-lg shadow overflow-hidden">
+      {/* Lista de Rotas Agrupadas por Local */}
+      <div className="space-y-4">
         {isLoading ? (
-          <div className="p-8 text-center">
+          <div className="bg-white rounded-lg shadow p-8 text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
             <p className="mt-4 text-gray-600">Carregando dados...</p>
           </div>
         ) : rotas.length === 0 ? (
-          <div className="p-8 text-center">
+          <div className="bg-white rounded-lg shadow p-8 text-center">
             <MapPin className="w-12 h-12 text-gray-400 mx-auto mb-4" />
             <p className="text-gray-600">Nenhuma rota disponível para alocação</p>
           </div>
         ) : (
-          <div className="divide-y divide-gray-200">
-            {rotas.map((rota: Rota) => {
+          locaisComRotas.map((nomeLocal) => (
+            <div key={nomeLocal} className="bg-white rounded-lg shadow overflow-hidden">
+              {/* Cabeçalho do Local */}
+              <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-4 py-3">
+                <div className="flex items-center gap-2">
+                  <MapPin className="w-5 h-5 text-white" />
+                  <h2 className="text-lg font-bold text-white">{nomeLocal}</h2>
+                  <span className="ml-auto bg-white/20 text-white px-3 py-1 rounded-full text-sm font-semibold">
+                    {rotasPorLocal[nomeLocal].length} {rotasPorLocal[nomeLocal].length === 1 ? 'rota' : 'rotas'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Rotas do Local */}
+              <div className="divide-y divide-gray-200">
+                {rotasPorLocal[nomeLocal].map((rota: Rota) => {
               const motoristasElegiveis = getMotoristasPorRota(rota);
               const alocacao = alocacoes.find((a) => a.rotaId === rota.id);
               const motoristaSelecionado = alocacao
@@ -790,9 +824,11 @@ export default function RotasAlocacao() {
                             <MapPin className="w-4 h-4 text-blue-600" />
                           </div>
                           <div className="flex-1">
-                            <h3 className="text-base font-semibold text-gray-900">
-                              {rota.codigoRota || 'Sem código'}
-                            </h3>
+                            {rota.codigoRota && (
+                              <h3 className="text-base font-semibold text-gray-900 mb-1">
+                                {rota.codigoRota}
+                              </h3>
+                            )}
                             <div className="mt-1 space-y-0.5">
                               <div className="flex flex-wrap items-center gap-2 text-sm text-gray-600">
                                 <Calendar className="w-4 h-4" />
@@ -801,12 +837,6 @@ export default function RotasAlocacao() {
                                 <span>
                                   {formatTime(rota.horaInicio)}
                                   {rota.horaFim && ` - ${formatTime(rota.horaFim)}`}
-                                </span>
-                              </div>
-                              <div className="flex items-center gap-2 text-sm text-gray-600">
-                                <MapPin className="w-4 h-4" />
-                                <span>
-                                  {rota.local?.nome || 'N/A'} - {rota.local?.cidade || ''}
                                 </span>
                               </div>
                               <div className="flex flex-wrap items-center gap-1.5 mt-1">
@@ -954,7 +984,9 @@ export default function RotasAlocacao() {
                 </div>
               );
             })}
-          </div>
+              </div>
+            </div>
+          ))
         )}
       </div>
 
@@ -970,7 +1002,8 @@ export default function RotasAlocacao() {
               return (
                 <div key={alocacao.rotaId} className="flex items-center justify-between text-sm">
                   <span className="text-gray-700">
-                    <strong>{rota?.codigoRota || 'Sem código'}</strong> - {formatDate(rota?.dataRota || '')}
+                    {rota?.codigoRota && <strong>{rota.codigoRota} - </strong>}
+                    {formatDate(rota?.dataRota || '')} - {rota?.local?.nome || 'Sem Local'}
                   </span>
                   <span className="text-green-700 font-medium">→ {motorista?.nomeCompleto}</span>
                 </div>
