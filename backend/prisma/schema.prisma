@@ -425,8 +425,6 @@ model HistoricoTrackingRota {
 
 model TabelaPreco {
   id                   String              @id @default(cuid())
-  tipoVeiculo          TipoVeiculo?
-  propriedadeVeiculo   PropriedadeVeiculo?
   tipoServico          TipoServico?
   propriedade          TipoPropriedade?
   versao               Int                 @default(1)
@@ -445,12 +443,11 @@ model TabelaPreco {
   criadoPor            String?
   createdAt            DateTime            @default(now())
   updatedAt            DateTime            @updatedAt
-  
+
   rotas                Rota[]
 
   @@index([estacao, ativo, dataInicioVigencia])
   @@index([tipoServico, propriedade, ativo])
-  @@index([tipoVeiculo, propriedadeVeiculo, ativo])
   @@map("tabelas_precos")
 }
 
