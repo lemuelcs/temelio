@@ -1525,6 +1525,33 @@ function RotasLoteModal({
       tamanhoHoras: '8',
       horarios: '',
     },
+    {
+      id: crypto.randomUUID(),
+      dataRota: toLocalDateInput(new Date()),
+      cicloRota: 'CICLO_1',
+      localId: '',
+      tipoVeiculo: 'CARGO_VAN',
+      tamanhoHoras: '8',
+      horarios: '',
+    },
+    {
+      id: crypto.randomUUID(),
+      dataRota: toLocalDateInput(new Date()),
+      cicloRota: 'CICLO_1',
+      localId: '',
+      tipoVeiculo: 'CARGO_VAN',
+      tamanhoHoras: '8',
+      horarios: '',
+    },
+    {
+      id: crypto.randomUUID(),
+      dataRota: toLocalDateInput(new Date()),
+      cicloRota: 'CICLO_1',
+      localId: '',
+      tipoVeiculo: 'CARGO_VAN',
+      tamanhoHoras: '8',
+      horarios: '',
+    },
   ]);
 
   // Atualizar localId quando DBS5 estiver disponível
@@ -1550,10 +1577,6 @@ function RotasLoteModal({
   };
 
   const removerLinha = (id: string) => {
-    if (linhas.length === 1) {
-      alert('É necessário ter pelo menos uma linha!');
-      return;
-    }
     setLinhas(prev => prev.filter(linha => linha.id !== id));
   };
 
@@ -1726,20 +1749,6 @@ function RotasLoteModal({
     saveMutation.mutate(linhas);
   };
 
-  // Adicionar nova linha automaticamente quando a última linha tiver horários preenchidos
-  useEffect(() => {
-    if (linhas.length > 0) {
-      const ultimaLinha = linhas[linhas.length - 1];
-      if (ultimaLinha.horarios.trim() && linhas.length < 50) {
-        // Limitar a 50 linhas para evitar problemas
-        const timer = setTimeout(() => {
-          adicionarLinha();
-        }, 500);
-        return () => clearTimeout(timer);
-      }
-    }
-  }, [linhas]);
-
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
       <div className="bg-white rounded-lg max-w-7xl w-full my-8">
@@ -1766,11 +1775,12 @@ function RotasLoteModal({
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
             <h3 className="text-sm font-medium text-blue-900 mb-2">Instruções</h3>
             <ul className="text-xs text-blue-800 space-y-1 list-disc list-inside">
+              <li>O formulário inicia com 4 linhas vazias para preenchimento</li>
               <li>Preencha cada linha com as informações da rota</li>
               <li>No campo "Horários", digite todos os horários separados por ponto e vírgula (ex: 10:00; 10:15; 10:30)</li>
               <li>O sistema criará uma rota para cada horário informado</li>
-              <li>Uma nova linha será adicionada automaticamente ao preencher a última</li>
-              <li>Use o botão "X" para remover uma linha antes de salvar</li>
+              <li>Use o botão "+ Adicionar nova linha" para incluir mais linhas</li>
+              <li>Use o botão "X" para remover uma linha indesejada</li>
             </ul>
           </div>
 
