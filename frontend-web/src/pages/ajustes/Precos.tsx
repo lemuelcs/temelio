@@ -10,7 +10,7 @@ interface TabelaPreco {
   tipoServico: 'BIKE' | 'SMALL_VAN' | 'LARGE_VAN' | 'HELPER' | 'PASSENGER';
   propriedade: 'PROPRIO' | 'TRANSPORTADORA';
   valorHora: number;
-  valorCancelamentoHora: number;
+  valorCancelamento: number;
   valorKm: number;
   bonusWeekend: number;
   valorHoraDSP?: number;
@@ -230,7 +230,7 @@ export default function Precos() {
                       R$ {Number(tabela.valorHora).toFixed(2)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
-                      R$ {Number(tabela.valorCancelamentoHora).toFixed(2)}
+                      R$ {Number(tabela.valorCancelamento).toFixed(2)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
                       R$ {Number(tabela.bonusWeekend).toFixed(2)}
@@ -312,7 +312,7 @@ function TabelaPrecoModal({ tabelaId, onClose }: { tabelaId: string | null; onCl
     tipoServico: 'SMALL_VAN',
     propriedade: 'PROPRIO',
     valorHora: '',
-    valorCancelamentoHora: '',
+    valorCancelamento: '',
     valorKm: '0.64',
     bonusWeekend: '',
     valorHoraDSP: '',
@@ -341,15 +341,15 @@ function TabelaPrecoModal({ tabelaId, onClose }: { tabelaId: string | null; onCl
         tipoServico: tabelaData.tipoServico || 'SMALL_VAN',
         propriedade: tabelaData.propriedade || 'PROPRIO',
         valorHora: tabelaData.valorHora?.toString() || '',
-        valorCancelamentoHora: tabelaData.valorCancelamentoHora?.toString() || '',
+        valorCancelamento: tabelaData.valorCancelamento?.toString() || '',
         valorKm: tabelaData.valorKm?.toString() || '0.64',
         bonusWeekend: tabelaData.bonusWeekend?.toString() || '',
         valorHoraDSP: tabelaData.valorHoraDSP?.toString() || '',
         valorCancelamentoDSP: tabelaData.valorCancelamentoDSP?.toString() || '',
         bonusWeekendDSP: tabelaData.bonusWeekendDSP?.toString() || '',
         valorPorPacote: tabelaData.valorPorPacote?.toString() || '',
-        dataInicioVigencia: tabelaData.dataInicioVigencia 
-          ? tabelaData.dataInicioVigencia.split('T')[0] 
+        dataInicioVigencia: tabelaData.dataInicioVigencia
+          ? tabelaData.dataInicioVigencia.split('T')[0]
           : new Date().toISOString().split('T')[0]
       });
     }
@@ -380,7 +380,7 @@ function TabelaPrecoModal({ tabelaId, onClose }: { tabelaId: string | null; onCl
       tipoServico: formData.tipoServico,
       propriedade: formData.propriedade,
       valorHora: parseFloat(formData.valorHora),
-      valorCancelamentoHora: parseFloat(formData.valorCancelamentoHora),
+      valorCancelamento: parseFloat(formData.valorCancelamento),
       valorKm: parseFloat(formData.valorKm),
       bonusWeekend: parseFloat(formData.bonusWeekend),
       valorHoraDSP: formData.valorHoraDSP ? parseFloat(formData.valorHoraDSP) : null,
@@ -488,8 +488,8 @@ function TabelaPrecoModal({ tabelaId, onClose }: { tabelaId: string | null; onCl
                   type="number"
                   step="0.01"
                   required
-                  value={formData.valorCancelamentoHora}
-                  onChange={(e) => setFormData({ ...formData, valorCancelamentoHora: e.target.value })}
+                  value={formData.valorCancelamento}
+                  onChange={(e) => setFormData({ ...formData, valorCancelamento: e.target.value })}
                   placeholder="10.00"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
@@ -687,7 +687,7 @@ function HistoricoModal({ historicoKey, onClose }: { historicoKey: any; onClose:
                     </div>
                     <div className="bg-red-50 p-2 rounded">
                       <p className="text-xs text-gray-600">Cancelamento</p>
-                      <p className="font-semibold text-red-900">R$ {Number(h.valorCancelamentoHora).toFixed(2)}</p>
+                      <p className="font-semibold text-red-900">R$ {Number(h.valorCancelamento).toFixed(2)}</p>
                     </div>
                     <div className="bg-green-50 p-2 rounded">
                       <p className="text-xs text-gray-600">Bonus Weekend</p>
