@@ -19,6 +19,7 @@ router.get('/', motoristaController.listar);
 router.get('/import/template', motoristaController.baixarModeloImportacao);
 router.post('/import', upload.single('file'), motoristaController.importarCsv);
 router.post('/', motoristaController.criar);
+router.get('/export', motoristaController.exportarCsv);
 router.get('/:id', motoristaController.buscarPorId);
 router.put('/:id', motoristaController.atualizar);
 router.delete('/:id', motoristaController.excluir);
