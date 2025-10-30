@@ -537,6 +537,14 @@ export default function RotasAlocacao() {
     [rotas]
   );
 
+  const rotasSemMotoristas = useMemo(() => {
+    return rotas.filter((rota) => {
+      if (rota.status !== 'DISPONIVEL') return false;
+      const motoristasElegiveis = getMotoristasPorRota(rota);
+      return motoristasElegiveis.length === 0;
+    }).length;
+  }, [rotas, motoristas, disponibilidades, alocacoes]);
+
   // Enviar ofertas
   const handleEnviarOfertas = () => {
     if (alocacoes.length === 0) {
@@ -657,6 +665,35 @@ export default function RotasAlocacao() {
         </div>
       )}
 
+      {/* Alerta de Rotas sem Motoristas */}
+      {rotasSemMotoristas > 0 && !isLoading && (
+        <div className="bg-red-50 border-2 border-red-300 rounded-lg p-4 shadow-md">
+          <div className="flex items-start gap-3">
+            <div className="flex-shrink-0 w-10 h-10 bg-red-500 rounded-full flex items-center justify-center">
+              <AlertCircle className="w-6 h-6 text-white" />
+            </div>
+            <div className="flex-1">
+              <div className="flex items-center gap-2">
+                <h3 className="font-bold text-red-900 text-lg">{rotasSemMotoristas}</h3>
+                <span className="text-red-900 font-semibold">
+                  {rotasSemMotoristas === 1 ? 'Rota disponível' : 'Rotas disponíveis'} sem motoristas elegíveis
+                </span>
+              </div>
+              <div className="mt-2 text-xs text-red-700">
+                <p className="font-semibold">⚠️ Nenhum motorista elegível</p>
+                <p className="mt-1">Verifique se há motoristas:</p>
+                <ul className="list-disc list-inside mt-1 space-y-0.5 ml-2">
+                  <li>Com tipo de veículo: Large Van</li>
+                  <li>Com status ATIVO</li>
+                  <li>Com disponibilidade para {filterData ? formatDate(filterData) : '[data]'} - Ciclo 1 (Manhã)</li>
+                  <li>Que ainda não foram alocados a outras rotas</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Estatísticas */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
@@ -723,7 +760,7 @@ export default function RotasAlocacao() {
                   ? 'Rota recusada. Selecione um novo motorista elegível.'
                   : null;
               const cardClassName =
-                'p-6 transition ' + (rota.status === 'RECUSADA' ? 'bg-red-50/60 hover:bg-red-50' : 'hover:bg-gray-50');
+                'p-3 transition ' + (rota.status === 'RECUSADA' ? 'bg-red-50/60 hover:bg-red-50' : 'hover:bg-gray-50');
               const motoristaAtualId = motoristaRelacionado?.id ?? null;
               const estaEditando = editingRoutes[rota.id] === true;
               const selecaoEdicao = editSelections[rota.id] ?? (motoristaAtualId ?? '');
@@ -744,19 +781,19 @@ export default function RotasAlocacao() {
 
               return (
                 <div key={rota.id} className={cardClassName}>
-                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-3">
                     {/* Informações da Rota */}
                     <div className="lg:col-span-7">
-                      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                        <div className="flex items-start gap-4">
-                          <div className="flex-shrink-0 w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
-                            <MapPin className="w-6 h-6 text-blue-600" />
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="flex items-start gap-2">
+                          <div className="flex-shrink-0 w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
+                            <MapPin className="w-4 h-4 text-blue-600" />
                           </div>
                           <div className="flex-1">
-                            <h3 className="text-lg font-semibold text-gray-900">
+                            <h3 className="text-base font-semibold text-gray-900">
                               {rota.codigoRota || 'Sem código'}
                             </h3>
-                            <div className="mt-2 space-y-1">
+                            <div className="mt-1 space-y-0.5">
                               <div className="flex flex-wrap items-center gap-2 text-sm text-gray-600">
                                 <Calendar className="w-4 h-4" />
                                 <span>{formatDate(rota.dataRota)}</span>
@@ -772,20 +809,20 @@ export default function RotasAlocacao() {
                                   {rota.local?.nome || 'N/A'} - {rota.local?.cidade || ''}
                                 </span>
                               </div>
-                              <div className="flex flex-wrap items-center gap-3 mt-2">
-                                <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-purple-100 text-purple-800">
+                              <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
                                   {getCicloLabel(rota.cicloRota)}
                                 </span>
-                                <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-blue-100 text-blue-800">
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
                                   {getTipoVeiculoLabel(rota.tipoVeiculo)}
                                 </span>
-                                <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-green-100 text-green-800">
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
                                   {rota.tamanhoHoras}h
                                 </span>
-                              </div>
-                              <div className="flex items-center gap-1 text-sm font-semibold text-green-600 mt-2">
-                                <DollarSign className="w-4 h-4" />
-                                {formatCurrency(rota.valorProjetado)}
+                                <div className="flex items-center gap-1 text-sm font-semibold text-green-600">
+                                  <DollarSign className="w-4 h-4" />
+                                  {formatCurrency(rota.valorProjetado)}
+                                </div>
                               </div>
                             </div>
                           </div>
@@ -803,22 +840,22 @@ export default function RotasAlocacao() {
                                     ? cancelarEdicao(rota.id)
                                     : iniciarEdicao(rota, motoristaAtualId)
                                 }
-                                className={`inline-flex items-center justify-center w-9 h-9 rounded-md border border-gray-300 text-gray-600 hover:bg-gray-100 transition ${
+                                className={`inline-flex items-center justify-center w-7 h-7 rounded border border-gray-300 text-gray-600 hover:bg-gray-100 transition ${
                                   estaEditando ? 'bg-gray-100' : ''
                                 }`}
                                 disabled={emReoferta || emCancelamento}
                                 title={estaEditando ? 'Cancelar edição' : 'Editar oferta'}
                               >
-                                <Edit2 className="w-4 h-4" />
+                                <Edit2 className="w-3 h-3" />
                               </button>
                               <button
                                 type="button"
                                 onClick={() => handleCancelarOferta(rota)}
-                                className="inline-flex items-center justify-center w-9 h-9 rounded-md border border-red-200 text-red-600 hover:bg-red-50 transition"
+                                className="inline-flex items-center justify-center w-7 h-7 rounded border border-red-200 text-red-600 hover:bg-red-50 transition"
                                 disabled={emCancelamento}
                                 title="Excluir oferta e voltar para pendente"
                               >
-                                <Trash2 className="w-4 h-4" />
+                                <Trash2 className="w-3 h-3" />
                               </button>
                             </>
                           )}
@@ -828,17 +865,17 @@ export default function RotasAlocacao() {
 
                     {/* Seleção de Motorista */}
                     <div className="lg:col-span-5">
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label className="block text-xs font-medium text-gray-700 mb-1">
                         {podeAlocar ? 'Selecionar Motorista' : 'Motorista vinculado'}
                       </label>
 
                       {podeAlocar ? (
                         <>
-                          <div className="flex gap-2">
+                          <div className="flex gap-1">
                             <select
                               value={alocacao?.motoristaId || ''}
                               onChange={(e) => handleAlocar(rota.id, e.target.value)}
-                              className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                              className="flex-1 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                             >
                               <option value="">-- Selecione um motorista --</option>
                               {motoristasElegiveis.map((motorista: any) => (
@@ -850,35 +887,13 @@ export default function RotasAlocacao() {
                             {alocacao && (
                               <button
                                 onClick={() => handleDesalocar(rota.id)}
-                                className="flex-shrink-0 w-10 h-10 flex items-center justify-center bg-red-100 hover:bg-red-200 text-red-600 rounded-lg transition"
+                                className="flex-shrink-0 w-7 h-7 flex items-center justify-center bg-red-100 hover:bg-red-200 text-red-600 rounded transition"
                                 title="Desalocar motorista"
                               >
-                                <span className="text-lg font-bold">×</span>
+                                <span className="text-base font-bold">×</span>
                               </button>
                             )}
                           </div>
-
-                          {motoristasElegiveis.length === 0 && (
-                            <div className="mt-2 text-xs text-red-600">
-                              <p className="font-semibold">⚠️ Nenhum motorista elegível</p>
-                              <p className="mt-1">
-                                Verifique se há motoristas:
-                              </p>
-                              <ul className="list-disc list-inside mt-1 space-y-0.5">
-                                <li>Com tipo de veículo: {getTipoVeiculoLabel(rota.tipoVeiculo)}</li>
-                                <li>Com status ATIVO</li>
-                                <li>
-                                  Com disponibilidade para {formatDate(rota.dataRota)} - {getCicloLabel(rota.cicloRota)}
-                                </li>
-                                <li>Que ainda não foram alocados a outras rotas</li>
-                              </ul>
-                              {disponibilidades.length === 0 && (
-                                <p className="mt-2 text-red-700 font-semibold">
-                                  ⚠️ Nenhuma disponibilidade foi carregada. Veja o alerta acima.
-                                </p>
-                              )}
-                            </div>
-                          )}
 
                           {alocacao && motoristaSelecionado && (
                             <p className="mt-2 text-xs text-green-600 flex items-center gap-1">
@@ -895,11 +910,11 @@ export default function RotasAlocacao() {
                         </>
                       ) : estaEditando ? (
                         <>
-                          <div className="flex gap-2">
+                          <div className="flex gap-1">
                             <select
                               value={selecaoEdicao}
                               onChange={(e) => handleSelecaoEdicao(rota.id, e.target.value)}
-                              className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                              className="flex-1 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                               disabled={emReoferta}
                             >
                               <option value="">-- Selecione um motorista --</option>
@@ -912,7 +927,7 @@ export default function RotasAlocacao() {
                             <button
                               type="button"
                               onClick={() => cancelarEdicao(rota.id)}
-                              className="px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-100 transition"
+                              className="px-2 py-1 border border-gray-300 rounded text-xs text-gray-600 hover:bg-gray-100 transition"
                               disabled={emReoferta}
                             >
                               Cancelar
@@ -926,11 +941,11 @@ export default function RotasAlocacao() {
                           )}
                         </>
                       ) : (
-                        <div className="p-4 bg-gray-100 border border-gray-200 rounded-lg">
-                          <p className="text-xs text-gray-500 uppercase tracking-wide">Motorista</p>
-                          <p className="text-sm font-semibold text-gray-900 mt-1">{nomeMotoristaRelacionado}</p>
+                        <div className="p-2 bg-gray-100 border border-gray-200 rounded">
+                          <p className="text-xs text-gray-500">Motorista</p>
+                          <p className="text-sm font-semibold text-gray-900">{nomeMotoristaRelacionado}</p>
                           {mensagemStatus && (
-                            <p className="text-xs text-gray-600 mt-2">{mensagemStatus}</p>
+                            <p className="text-xs text-gray-600 mt-1">{mensagemStatus}</p>
                           )}
                         </div>
                       )}
