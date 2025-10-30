@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Search, Edit, CheckCircle, XCircle, User, RefreshCw, MessageCircle } from 'lucide-react';
+import { Plus, Search, Edit, CheckCircle, XCircle, User, RefreshCw, MessageCircle, Download, ArrowUpDown, ChevronUp, ChevronDown } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import api from '../../services/api';
 
@@ -51,6 +51,15 @@ interface Motorista {
   createdAt: string;
   updatedAt?: string;
 }
+
+type SortColumn = 'nome' | 'cpf' | 'veiculo' | 'status';
+
+const TIPO_VEICULO_LABELS: Record<string, string> = {
+  MOTOCICLETA: 'Moto',
+  CARRO_PASSEIO: 'Carro',
+  CARGO_VAN: 'Cargo Van',
+  LARGE_VAN: 'Large Van',
+};
 
 // Funções auxiliares para máscaras
 const formatCPF = (value: string) => {
@@ -129,6 +138,8 @@ export default function Motoristas() {
   const [alertMotoristaIds, setAlertMotoristaIds] = useState<string[]>([]);
   const [alertFilterLabel, setAlertFilterLabel] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [exportandoCsv, setExportandoCsv] = useState(false);
+  const [sortConfig, setSortConfig] = useState<{ coluna: SortColumn; direcao: 'asc' | 'desc' } | null>(null);
   
   const queryClient = useQueryClient();
   const location = useLocation();
@@ -167,8 +178,9 @@ export default function Motoristas() {
     onSuccess: (data) => {
       const resumo = data?.data?.resumo;
       const importados = resumo?.importados ?? 0;
+      const atualizados = resumo?.atualizados ?? 0;
       const ignorados = resumo?.ignorados ?? 0;
-      alert(`Importação concluída: ${importados} importado(s), ${ignorados} ignorado(s).`);
+      alert(`Importação concluída: ${importados} novo(s), ${atualizados} atualizado(s), ${ignorados} ignorado(s).`);
       queryClient.invalidateQueries({ queryKey: ['motoristas'] });
     },
     onError: (error: any) => {
@@ -218,7 +230,7 @@ export default function Motoristas() {
       return [filterStatus];
     })();
 
-    return motoristasOrdenados.filter((m: any) => {
+    const filtrados = motoristasOrdenados.filter((m: any) => {
       const matchesSearch =
         !normalizedSearch ||
         (m.nomeCompleto || '').toLowerCase().includes(normalizedSearch) ||
@@ -234,7 +246,37 @@ export default function Motoristas() {
 
       return matchesSearch && matchesStatus && matchesTipo && matchesAlertFilter;
     });
-  }, [motoristasOrdenados, searchTerm, filterStatus, filterTipo, alertMotoristaIds]);
+    
+    if (!sortConfig) {
+      return filtrados;
+    }
+
+    const extrairValorOrdenacao = (motorista: any) => {
+      switch (sortConfig.coluna) {
+        case 'nome':
+          return (motorista.nomeCompleto || '').toLowerCase();
+        case 'cpf':
+          return (motorista.cpf || '').replace(/\D/g, '');
+        case 'veiculo':
+          return TIPO_VEICULO_LABELS[motorista.tipoVeiculo] || motorista.tipoVeiculo || '';
+        case 'status':
+          return motorista.status || '';
+        default:
+          return '';
+      }
+    };
+
+    return [...filtrados].sort((a: any, b: any) => {
+      const valorA = extrairValorOrdenacao(a);
+      const valorB = extrairValorOrdenacao(b);
+
+      if (valorA === valorB) return 0;
+      if (valorA > valorB) {
+        return sortConfig.direcao === 'asc' ? 1 : -1;
+      }
+      return sortConfig.direcao === 'asc' ? -1 : 1;
+    });
+  }, [motoristasOrdenados, searchTerm, filterStatus, filterTipo, alertMotoristaIds, sortConfig]);
 
   const handleEdit = (id: string) => {
     setEditingId(id);
@@ -266,6 +308,64 @@ export default function Motoristas() {
     }
   };
 
+  const handleExportarMotoristas = async () => {
+    try {
+      setExportandoCsv(true);
+      const response = await api.get('/gestao/motoristas/export', {
+        responseType: 'blob',
+      });
+
+      const blob = new Blob([response.data], { type: 'text/csv;charset=utf-8;' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      const disposition = response.headers['content-disposition'];
+      let filename = 'motoristas.csv';
+
+      if (typeof disposition === 'string') {
+        const match = disposition.match(/filename="?([^"]+)"?/i);
+        if (match?.[1]) {
+          filename = match[1];
+        }
+      }
+
+      link.href = url;
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (error: any) {
+      const mensagem = error?.response?.data?.message || 'Erro ao exportar motoristas';
+      alert(mensagem);
+    } finally {
+      setExportandoCsv(false);
+    }
+  };
+
+  const handleOrdenacao = (coluna: SortColumn) => {
+    setSortConfig((prev) => {
+      if (prev?.coluna === coluna) {
+        if (prev.direcao === 'asc') {
+          return { coluna, direcao: 'desc' };
+        }
+        return null; // volta para ordenação padrão (data recente)
+      }
+      return { coluna, direcao: 'asc' };
+    });
+  };
+
+  const renderIconeOrdenacao = (coluna: SortColumn) => {
+    if (sortConfig?.coluna !== coluna) {
+      return <ArrowUpDown className="w-4 h-4 text-gray-400" />;
+    }
+
+    return sortConfig.direcao === 'asc' ? (
+      <ChevronUp className="w-4 h-4 text-blue-600" />
+    ) : (
+      <ChevronDown className="w-4 h-4 text-blue-600" />
+    );
+  };
+
   const handleArquivoImportacao = (event: React.ChangeEvent<HTMLInputElement>) => {
     const arquivo = event.target.files?.[0];
     if (!arquivo) return;
@@ -278,15 +378,7 @@ export default function Motoristas() {
 
   const importandoCsv = importarMotoristasMutation.isPending;
 
-  const getTipoVeiculoLabel = (tipo: string) => {
-    const labels: Record<string, string> = {
-      MOTOCICLETA: 'Moto',
-      CARRO_PASSEIO: 'Carro',
-      CARGO_VAN: 'Cargo Van',
-      LARGE_VAN: 'Large Van',
-    };
-    return labels[tipo] || tipo;
-  };
+  const getTipoVeiculoLabel = (tipo: string) => TIPO_VEICULO_LABELS[tipo] || tipo;
 
   return (
     <div className="space-y-6">
@@ -297,6 +389,15 @@ export default function Motoristas() {
           <p className="text-gray-600 mt-1">Gerencie os motoristas parceiros</p>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleExportarMotoristas}
+            className="flex items-center gap-2 px-4 py-2 border border-emerald-300 text-emerald-600 rounded-lg text-sm font-medium hover:bg-emerald-50 transition disabled:opacity-60 disabled:cursor-not-allowed"
+            disabled={exportandoCsv}
+          >
+            <Download className="w-5 h-5" />
+            {exportandoCsv ? 'Exportando...' : 'Exportar Motoristas'}
+          </button>
           <button
             type="button"
             onClick={handleDownloadTemplate}
@@ -416,10 +517,46 @@ export default function Motoristas() {
             <table className="w-full">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Motorista</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">CPF</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Veículo</th>
-                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Status</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                    <button
+                      type="button"
+                      onClick={() => handleOrdenacao('nome')}
+                      className="flex items-center gap-1 hover:text-blue-600 transition-colors"
+                    >
+                      Motorista
+                      {renderIconeOrdenacao('nome')}
+                    </button>
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                    <button
+                      type="button"
+                      onClick={() => handleOrdenacao('cpf')}
+                      className="flex items-center gap-1 hover:text-blue-600 transition-colors"
+                    >
+                      CPF
+                      {renderIconeOrdenacao('cpf')}
+                    </button>
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                    <button
+                      type="button"
+                      onClick={() => handleOrdenacao('veiculo')}
+                      className="flex items-center gap-1 hover:text-blue-600 transition-colors"
+                    >
+                      Veículo
+                      {renderIconeOrdenacao('veiculo')}
+                    </button>
+                  </th>
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">
+                    <button
+                      type="button"
+                      onClick={() => handleOrdenacao('status')}
+                      className="flex items-center gap-1 justify-center hover:text-blue-600 transition-colors w-full"
+                    >
+                      Status
+                      {renderIconeOrdenacao('status')}
+                    </button>
+                  </th>
                   <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Contato</th>
                   <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Ações</th>
                 </tr>
