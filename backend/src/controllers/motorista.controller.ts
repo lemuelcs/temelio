@@ -295,6 +295,131 @@ class MotoristaController {
     res.send(cabecalho + exemplo);
   }
 
+  async exportarCsv(_req: Request, res: Response, next: NextFunction) {
+    try {
+      const motoristas = await prisma.motorista.findMany({
+        include: {
+          documento: true,
+          contratos: {
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+          },
+        },
+        orderBy: [{ nomeCompleto: 'asc' }],
+      });
+
+      const campos = [
+        'nomeCompleto',
+        'cpf',
+        'email',
+        'celular',
+        'cidade',
+        'uf',
+        'tipoVeiculo',
+        'propriedadeVeiculo',
+        'anoFabricacaoVeiculo',
+        'status',
+        'transporterId',
+        'dataNascimento',
+        'chavePix',
+        'cep',
+        'logradouro',
+        'numero',
+        'complemento',
+        'bairro',
+        'placaVeiculo',
+        'numeroCNH',
+        'validadeCNH',
+        'anoLicenciamento',
+        'dataVerificacaoBRK',
+        'proximaVerificacaoBRK',
+        'statusBRK',
+        'numeroContrato',
+        'dataAssinatura',
+        'dataVigenciaInicial',
+        'cnpjMEI',
+        'razaoSocialMEI',
+      ];
+
+      const formatarData = (valor?: Date | null) => {
+        if (!valor) return '';
+        return valor.toISOString().split('T')[0];
+      };
+
+      const sanitizeCsv = (valor: unknown) => {
+        if (valor === null || valor === undefined) {
+          return '""';
+        }
+
+        let texto: string;
+        if (valor instanceof Date) {
+          texto = formatarData(valor);
+        } else if (typeof valor === 'boolean') {
+          texto = valor ? 'true' : 'false';
+        } else {
+          texto = String(valor);
+        }
+
+        const semQuebraLinha = texto.replace(/\r?\n/g, ' ').trim();
+        const protegido = semQuebraLinha.replace(/"/g, '""');
+        return `"${protegido}"`;
+      };
+
+      const linhas = motoristas.map((motorista) => {
+        const documento = motorista.documento;
+        const contratoAtual = motorista.contratos[0];
+
+        const valores = [
+          motorista.nomeCompleto,
+          motorista.cpf,
+          motorista.email,
+          motorista.celular,
+          motorista.cidade,
+          motorista.uf,
+          motorista.tipoVeiculo,
+          motorista.propriedadeVeiculo,
+          motorista.anoFabricacaoVeiculo ?? '',
+          motorista.status,
+          motorista.transporterId ?? '',
+          formatarData(motorista.dataNascimento),
+          motorista.chavePix ?? '',
+          motorista.cep ?? '',
+          motorista.logradouro ?? '',
+          motorista.numero ?? '',
+          motorista.complemento ?? '',
+          motorista.bairro ?? '',
+          motorista.placaVeiculo ?? '',
+          documento?.numeroCNH ?? '',
+          formatarData(documento?.validadeCNH ?? null),
+          documento?.anoLicenciamento ?? '',
+          formatarData(documento?.dataVerificacaoBRK ?? null),
+          formatarData(documento?.proximaVerificacaoBRK ?? null),
+          documento?.statusBRK ?? '',
+          contratoAtual?.numeroContrato ?? '',
+          formatarData(contratoAtual?.dataAssinatura ?? null),
+          formatarData(contratoAtual?.dataVigenciaInicial ?? null),
+          contratoAtual?.cnpjMEI ?? '',
+          contratoAtual?.razaoSocialMEI ?? '',
+        ];
+
+        return valores.map(sanitizeCsv).join(',');
+      });
+
+      const cabecalho = campos.join(',');
+      const conteudo = '\ufeff' + [cabecalho, ...linhas].join('\n');
+      const dataArquivo = new Date().toISOString().split('T')[0];
+
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="motoristas_${dataArquivo}.csv"`
+      );
+      res.send(conteudo);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   async importarCsv(req: Request, res: Response, next: NextFunction) {
     try {
       const arquivo = req.file;
@@ -303,7 +428,11 @@ class MotoristaController {
         throw new AppError('Arquivo CSV não enviado', 400);
       }
 
-      const conteudo = arquivo.buffer.toString('utf-8');
+      let conteudo = arquivo.buffer.toString('utf-8');
+
+      if (conteudo.charCodeAt(0) === 0xfeff) {
+        conteudo = conteudo.slice(1);
+      }
 
       // Validar formato básico do CSV antes de parsear
       const linhas = conteudo.split('\n').filter(l => l.trim().length > 0);
@@ -349,7 +478,8 @@ class MotoristaController {
         }
       }
 
-      const importados: Array<{ linha: number; nome: string; email: string }> = [];
+      const importados: Array<{ linha: number; nome: string; email: string; acao: 'criado' }> = [];
+      const atualizados: Array<{ linha: number; nome: string; email: string; acao: 'atualizado' }> = [];
       const ignorados: Array<{ linha: number; motivo: string }> = [];
 
       const forwarded = req.headers['x-forwarded-for'];
@@ -376,7 +506,8 @@ class MotoristaController {
         try {
           const nomeCompleto = sanitizeString(linha.nomeCompleto);
           const cpf = (linha.cpf || '').replace(/\D/g, '');
-          const email = sanitizeString(linha.email)?.toLowerCase();
+          const emailLimpo = sanitizeString(linha.email);
+          const email = emailLimpo?.toLowerCase();
           const celular = (linha.celular || '').replace(/\D/g, '');
 
           if (!nomeCompleto) {
@@ -394,7 +525,10 @@ class MotoristaController {
             continue;
           }
 
-          if (!linha.cidade || !linha.uf) {
+          const cidade = sanitizeString(linha.cidade);
+          const uf = sanitizeString(linha.uf)?.toUpperCase();
+
+          if (!cidade || !uf) {
             ignorados.push({ linha: numeroLinha, motivo: 'Cidade e UF são obrigatórios' });
             continue;
           }
@@ -405,17 +539,11 @@ class MotoristaController {
             continue;
           }
 
-          const cpfExiste = await prisma.motorista.findUnique({
-            where: { cpf },
-          });
-          const emailExiste = await prisma.usuario.findUnique({
-            where: { email },
-          });
-
-          if (cpfExiste || emailExiste) {
+          const anoAtual = new Date().getFullYear();
+          if (anoAtual - anoFabricacao > 15) {
             ignorados.push({
               linha: numeroLinha,
-              motivo: 'CPF ou email já cadastrado',
+              motivo: 'Veículo não pode ter mais de 15 anos de fabricação',
             });
             continue;
           }
@@ -426,9 +554,7 @@ class MotoristaController {
             continue;
           }
 
-          const propriedadeVeiculoNormalizada = (
-            linha.propriedadeVeiculo || 'PROPRIO'
-          ).toUpperCase();
+          const propriedadeVeiculoNormalizada = (linha.propriedadeVeiculo || 'PROPRIO').toUpperCase();
           if (
             !Object.values(PropriedadeVeiculo).includes(
               propriedadeVeiculoNormalizada as PropriedadeVeiculo
@@ -446,50 +572,201 @@ class MotoristaController {
             continue;
           }
 
+          let motoristaExistente = email
+            ? await prisma.motorista.findFirst({
+                where: { email },
+              })
+            : null;
+
+          if (!motoristaExistente && emailLimpo && emailLimpo !== email) {
+            motoristaExistente = await prisma.motorista.findFirst({
+              where: { email: emailLimpo },
+            });
+          }
+
+          if (motoristaExistente) {
+            const cpfPertenceOutro = await prisma.motorista.findUnique({ where: { cpf } });
+            if (cpfPertenceOutro && cpfPertenceOutro.id !== motoristaExistente.id) {
+              ignorados.push({
+                linha: numeroLinha,
+                motivo: 'CPF pertence a outro motorista',
+              });
+              continue;
+            }
+          } else {
+            const cpfExiste = await prisma.motorista.findUnique({
+              where: { cpf },
+            });
+            let usuarioExistente = email
+              ? await prisma.usuario.findFirst({
+                  where: { email },
+                })
+              : null;
+
+            if (!usuarioExistente && emailLimpo && emailLimpo !== email) {
+              usuarioExistente = await prisma.usuario.findFirst({
+                where: { email: emailLimpo },
+              });
+            }
+
+            if (cpfExiste || usuarioExistente) {
+              ignorados.push({
+                linha: numeroLinha,
+                motivo: 'CPF ou email já cadastrado',
+              });
+              continue;
+            }
+          }
+
+          const transporterId = sanitizeString(linha.transporterId);
+          const dataNascimento = toDateOrUndefined(linha.dataNascimento);
+          const chavePix = sanitizeString(linha.chavePix);
+          const cep = sanitizeString(linha.cep)?.replace(/\D/g, '') ?? null;
+          const logradouro = sanitizeString(linha.logradouro);
+          const numeroEndereco = sanitizeString(linha.numero);
+          const complemento = sanitizeString(linha.complemento);
+          const bairro = sanitizeString(linha.bairro);
+          const placaVeiculo = sanitizeString(linha.placaVeiculo);
+          const numeroCNH = sanitizeString(linha.numeroCNH);
+          const validadeCNH = toDateOrUndefined(linha.validadeCNH);
+          const anoLicenciamento = toNumberOrNull(linha.anoLicenciamento);
+          const dataVerificacaoBRK = toDateOrUndefined(linha.dataVerificacaoBRK);
+          const proximaVerificacaoBRK = toDateOrUndefined(linha.proximaVerificacaoBRK);
+          const statusBRKNormalizado =
+            typeof linha.statusBRK === 'boolean'
+              ? linha.statusBRK
+              : linha.statusBRK === 'true'
+                ? true
+                : linha.statusBRK === 'false'
+                  ? false
+                  : undefined;
+          const numeroContrato = sanitizeString(linha.numeroContrato);
+          const dataAssinatura = toDateOrUndefined(linha.dataAssinatura);
+          const dataVigenciaInicial = toDateOrUndefined(linha.dataVigenciaInicial);
+          const cnpjMEI = sanitizeString(linha.cnpjMEI)?.replace(/\D/g, '') ?? undefined;
+          const razaoSocialMEI = sanitizeString(linha.razaoSocialMEI) ?? undefined;
+
+          if (motoristaExistente) {
+            await prisma.$transaction(async (tx) => {
+              await tx.motorista.update({
+                where: { id: motoristaExistente.id },
+                data: {
+                  transporterId,
+                  nomeCompleto,
+                  cpf,
+                  dataNascimento: dataNascimento ?? null,
+                  email,
+                  celular,
+                  chavePix,
+                  cep,
+                  logradouro,
+                  numero: numeroEndereco,
+                  complemento,
+                  bairro,
+                  cidade,
+                  uf,
+                  tipoVeiculo: tipoVeiculoNormalizado as TipoVeiculo,
+                  propriedadeVeiculo: propriedadeVeiculoNormalizada as PropriedadeVeiculo,
+                  placaVeiculo,
+                  anoFabricacaoVeiculo: anoFabricacao ?? null,
+                  status: statusMotorista,
+                  usuario: {
+                    update: {
+                      nome: nomeCompleto,
+                      email,
+                      ativo: statusMotorista === StatusMotorista.ATIVO,
+                    },
+                  },
+                  documento: {
+                    upsert: {
+                      create: {
+                        numeroCNH,
+                        validadeCNH: validadeCNH ?? null,
+                        anoLicenciamento: anoLicenciamento ?? null,
+                        dataVerificacaoBRK: dataVerificacaoBRK ?? null,
+                        proximaVerificacaoBRK: proximaVerificacaoBRK ?? null,
+                        statusBRK: statusBRKNormalizado ?? false,
+                      },
+                      update: {
+                        numeroCNH,
+                        validadeCNH: validadeCNH ?? null,
+                        anoLicenciamento: anoLicenciamento ?? null,
+                        dataVerificacaoBRK: dataVerificacaoBRK ?? null,
+                        proximaVerificacaoBRK: proximaVerificacaoBRK ?? null,
+                        ...(statusBRKNormalizado !== undefined ? { statusBRK: statusBRKNormalizado } : {}),
+                      },
+                    },
+                  },
+                },
+              });
+
+              if (numeroContrato) {
+                const contratoPayload = {
+                  motoristaId: motoristaExistente.id,
+                  numeroContrato,
+                  dataAssinatura: dataAssinatura ?? new Date(),
+                  dataVigenciaInicial: dataVigenciaInicial ?? new Date(),
+                  ativo: true,
+                  cnpjMEI: cnpjMEI ?? null,
+                  razaoSocialMEI: razaoSocialMEI ?? null,
+                };
+
+                await tx.contratoMotorista.upsert({
+                  where: { numeroContrato },
+                  update: contratoPayload,
+                  create: contratoPayload,
+                });
+
+                await tx.contratoMotorista.updateMany({
+                  where: {
+                    motoristaId: motoristaExistente.id,
+                    numeroContrato: { not: numeroContrato },
+                  },
+                  data: { ativo: false },
+                });
+              }
+            });
+
+            atualizados.push({
+              linha: numeroLinha,
+              nome: nomeCompleto,
+              email,
+              acao: 'atualizado',
+            });
+            continue;
+          }
+
           const motorista = await motoristaService.criar(
             {
-              // Dados pessoais
-              transporterId: sanitizeString(linha.transporterId),
+              transporterId,
               nomeCompleto,
               cpf,
-              dataNascimento: toDateOrUndefined(linha.dataNascimento),
+              dataNascimento,
               email,
               celular,
-              chavePix: sanitizeString(linha.chavePix),
-              // Endereço
-              cep: sanitizeString(linha.cep)?.replace(/\D/g, '') ?? null,
-              logradouro: sanitizeString(linha.logradouro),
-              numero: sanitizeString(linha.numero),
-              complemento: sanitizeString(linha.complemento),
-              bairro: sanitizeString(linha.bairro),
-              cidade: linha.cidade,
-              uf: (linha.uf || '').toUpperCase(),
-              // Veículo
+              chavePix,
+              cep,
+              logradouro,
+              numero: numeroEndereco,
+              complemento,
+              bairro,
+              cidade,
+              uf,
               tipoVeiculo: tipoVeiculoNormalizado as TipoVeiculo,
               propriedadeVeiculo: propriedadeVeiculoNormalizada as PropriedadeVeiculo,
-              placaVeiculo: sanitizeString(linha.placaVeiculo),
-              anoFabricacaoVeiculo: toNumberOrNull(linha.anoFabricacaoVeiculo) ?? undefined,
-              // Documentos
-              numeroCNH: sanitizeString(linha.numeroCNH),
-              validadeCNH: toDateOrUndefined(linha.validadeCNH),
-              anoLicenciamento: toNumberOrNull(linha.anoLicenciamento) ?? undefined,
-              dataVerificacaoBRK: toDateOrUndefined(linha.dataVerificacaoBRK),
-              proximaVerificacaoBRK: toDateOrUndefined(linha.proximaVerificacaoBRK),
-              statusBRK:
-                typeof linha.statusBRK === 'boolean'
-                  ? linha.statusBRK
-                  : linha.statusBRK === 'true'
-                    ? true
-                    : linha.statusBRK === 'false'
-                      ? false
-                      : undefined,
-              // Contrato e MEI
-              numeroContrato: sanitizeString(linha.numeroContrato) ?? undefined,
-              dataAssinatura: toDateOrUndefined(linha.dataAssinatura),
-              dataVigenciaInicial: toDateOrUndefined(linha.dataVigenciaInicial),
-              cnpjMEI: sanitizeString(linha.cnpjMEI)?.replace(/\D/g, '') ?? undefined,
-              razaoSocialMEI: sanitizeString(linha.razaoSocialMEI) ?? undefined,
-              // Autenticação
+              placaVeiculo,
+              anoFabricacaoVeiculo: anoFabricacao ?? undefined,
+              numeroCNH,
+              validadeCNH,
+              anoLicenciamento: anoLicenciamento ?? undefined,
+              dataVerificacaoBRK,
+              proximaVerificacaoBRK,
+              statusBRK: statusBRKNormalizado,
+              numeroContrato: numeroContrato ?? undefined,
+              dataAssinatura,
+              dataVigenciaInicial,
+              cnpjMEI,
+              razaoSocialMEI,
               senha: SENHA_TEMPORARIA_PADRAO,
               obrigarAlterarSenha: true,
               status: statusMotorista,
@@ -507,6 +784,7 @@ class MotoristaController {
             linha: numeroLinha,
             nome: motorista.nomeCompleto,
             email: motorista.email,
+            acao: 'criado',
           });
         } catch (erro: any) {
           const motivo =
@@ -525,6 +803,7 @@ class MotoristaController {
         {
           total: registros.length,
           importados: importados.length,
+          atualizados: atualizados.length,
           ignorados: ignorados.length,
         },
         'Importação de motoristas concluída'
@@ -534,10 +813,12 @@ class MotoristaController {
         success: true,
         data: {
           importados,
+          atualizados,
           ignorados,
           resumo: {
             totalLinhas: registros.length,
             importados: importados.length,
+            atualizados: atualizados.length,
             ignorados: ignorados.length,
           },
         },
