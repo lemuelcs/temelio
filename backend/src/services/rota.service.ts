@@ -6,7 +6,6 @@ import {
   CicloRota,
   StatusRota,
   StatusOferta,
-  PropriedadeVeiculo,
   StatusTracking,
   Prisma,
 } from '@prisma/client';
@@ -118,10 +117,6 @@ class RotaService {
     }
 
     // Buscar tabela de preços
-    const propriedadeVeiculo = veiculoTransportadora
-      ? PropriedadeVeiculo.TRANSPORTADORA
-      : PropriedadeVeiculo.PROPRIO;
-
     // Mapeamento de TipoVeiculo para TipoServico
     const TIPO_VEICULO_TO_SERVICO: Record<string, string[]> = {
       'MOTOCICLETA': ['BIKE'],
@@ -130,41 +125,27 @@ class RotaService {
       'LARGE_VAN': ['LARGE_VAN'],
     };
 
-    // Buscar primeiro pelos campos legados (tipoVeiculo/propriedadeVeiculo)
-    let tabelaPreco = await prisma.tabelaPreco.findFirst({
-      where: {
-        tipoVeiculo,
-        propriedadeVeiculo,
-        ativo: true,
-        dataInicioVigencia: { lte: new Date() },
-        OR: [
-          { dataFimVigencia: null },
-          { dataFimVigencia: { gte: new Date() } }
-        ]
-      }
-    });
+    // Buscar pelos campos tipoServico/propriedade
+    const tiposServico = TIPO_VEICULO_TO_SERVICO[tipoVeiculo] || [];
+    const propriedade = veiculoTransportadora ? 'TRANSPORTADORA' : 'PROPRIO';
 
-    // Se não encontrar, buscar pelos campos novos (tipoServico/propriedade)
-    if (!tabelaPreco) {
-      const tiposServico = TIPO_VEICULO_TO_SERVICO[tipoVeiculo] || [];
-      const propriedade = veiculoTransportadora ? 'TRANSPORTADORA' : 'PROPRIO';
+    let tabelaPreco = null;
+    for (const tipoServico of tiposServico) {
+      tabelaPreco = await prisma.tabelaPreco.findFirst({
+        where: {
+          estacao: local.codigo,
+          tipoServico: tipoServico as any,
+          propriedade: propriedade as any,
+          ativo: true,
+          dataInicioVigencia: { lte: new Date() },
+          OR: [
+            { dataFimVigencia: null },
+            { dataFimVigencia: { gte: new Date() } }
+          ]
+        }
+      });
 
-      for (const tipoServico of tiposServico) {
-        tabelaPreco = await prisma.tabelaPreco.findFirst({
-          where: {
-            tipoServico: tipoServico as any,
-            propriedade: propriedade as any,
-            ativo: true,
-            dataInicioVigencia: { lte: new Date() },
-            OR: [
-              { dataFimVigencia: null },
-              { dataFimVigencia: { gte: new Date() } }
-            ]
-          }
-        });
-
-        if (tabelaPreco) break;
-      }
+      if (tabelaPreco) break;
     }
 
     if (!tabelaPreco) {
@@ -593,9 +574,14 @@ class RotaService {
         ? data.veiculoTransportadora
         : rota.veiculoTransportadora;
 
-      const propriedadeVeiculo = veiculoTransportadora
-        ? PropriedadeVeiculo.TRANSPORTADORA
-        : PropriedadeVeiculo.PROPRIO;
+      // Buscar o local para obter a estação
+      const local = await prisma.local.findUnique({
+        where: { id: rota.localId }
+      });
+
+      if (!local) {
+        throw new AppError('Local não encontrado', 404);
+      }
 
       // Mapeamento de TipoVeiculo para TipoServico
       const TIPO_VEICULO_TO_SERVICO: Record<string, string[]> = {
@@ -605,41 +591,27 @@ class RotaService {
         'LARGE_VAN': ['LARGE_VAN'],
       };
 
-      // Buscar primeiro pelos campos legados
-      let tabelaPreco = await prisma.tabelaPreco.findFirst({
-        where: {
-          tipoVeiculo,
-          propriedadeVeiculo,
-          ativo: true,
-          dataInicioVigencia: { lte: new Date() },
-          OR: [
-            { dataFimVigencia: null },
-            { dataFimVigencia: { gte: new Date() } }
-          ]
-        }
-      });
+      // Buscar pelos campos tipoServico/propriedade
+      const tiposServico = TIPO_VEICULO_TO_SERVICO[tipoVeiculo] || [];
+      const propriedade = veiculoTransportadora ? 'TRANSPORTADORA' : 'PROPRIO';
 
-      // Se não encontrar, buscar pelos campos novos
-      if (!tabelaPreco) {
-        const tiposServico = TIPO_VEICULO_TO_SERVICO[tipoVeiculo] || [];
-        const propriedade = veiculoTransportadora ? 'TRANSPORTADORA' : 'PROPRIO';
+      let tabelaPreco = null;
+      for (const tipoServico of tiposServico) {
+        tabelaPreco = await prisma.tabelaPreco.findFirst({
+          where: {
+            estacao: local.codigo,
+            tipoServico: tipoServico as any,
+            propriedade: propriedade as any,
+            ativo: true,
+            dataInicioVigencia: { lte: new Date() },
+            OR: [
+              { dataFimVigencia: null },
+              { dataFimVigencia: { gte: new Date() } }
+            ]
+          }
+        });
 
-        for (const tipoServico of tiposServico) {
-          tabelaPreco = await prisma.tabelaPreco.findFirst({
-            where: {
-              tipoServico: tipoServico as any,
-              propriedade: propriedade as any,
-              ativo: true,
-              dataInicioVigencia: { lte: new Date() },
-              OR: [
-                { dataFimVigencia: null },
-                { dataFimVigencia: { gte: new Date() } }
-              ]
-            }
-          });
-
-          if (tabelaPreco) break;
-        }
+        if (tabelaPreco) break;
       }
 
       if (!tabelaPreco) {

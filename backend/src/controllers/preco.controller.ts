@@ -53,15 +53,8 @@ class PrecoController {
         ativo: ativo !== undefined ? ativo === 'true' : undefined
       };
 
-      const tabelas = await precoService.listar(filtros);
-
-      res.json({
-        status: 'success',
-        data: {
-          tabelas,
-          total: tabelas.length
-        }
-      });
+      // Serviço descontinuado - redirecionar para nova API
+      await precoService.listar(filtros);
     } catch (error) {
       next(error);
     }
@@ -152,16 +145,8 @@ class PrecoController {
   // POST /api/precos/seed
   async criarTabelasPadrao(req: Request, res: Response, next: NextFunction) {
     try {
-      const tabelas = await precoService.criarTabelasPadrao();
-
-      res.status(201).json({
-        status: 'success',
-        message: 'Tabelas de preços padrão criadas com sucesso',
-        data: {
-          tabelas,
-          total: tabelas.length
-        }
-      });
+      // Serviço descontinuado - redirecionar para nova API
+      await precoService.criarTabelasPadrao();
     } catch (error) {
       next(error);
     }
