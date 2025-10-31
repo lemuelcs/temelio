@@ -365,19 +365,6 @@ export function DashboardMotorista() {
     <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
 
       {/* ====================================================================== */}
-      {/* HEADER COM BOAS-VINDAS */}
-      {/* ====================================================================== */}
-
-      <Box sx={{ mb: 4 }}>
-        <Typography variant="h4" gutterBottom>
-          Olá, {data.motorista.nomeCompleto.split(' ')[0]}! 👋
-        </Typography>
-        <Typography variant="body1" color="text.secondary">
-          Bem-vindo ao seu painel de controle
-        </Typography>
-      </Box>
-
-      {/* ====================================================================== */}
       {/* CARD DE DESTAQUE: OFERTAS DE ROTAS PENDENTES */}
       {/* ====================================================================== */}
 

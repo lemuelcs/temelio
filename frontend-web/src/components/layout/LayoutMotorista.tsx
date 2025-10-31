@@ -1,8 +1,10 @@
 // frontend/src/components/layout/LayoutMotorista.tsx
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { Calendar, Truck, User, LogOut, Menu, Home } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
+import { useQuery } from '@tanstack/react-query';
+import api from '../../services/api';
 
 export function LayoutMotorista() {
   const [showMenu, setShowMenu] = useState(false);
@@ -13,6 +15,89 @@ export function LayoutMotorista() {
     logout();
     navigate('/login');
   };
+
+  // Buscar ofertas pendentes para o motorista (do dia + dia seguinte)
+  const { data: rotasOferecidas = [] } = useQuery({
+    queryKey: ['rotas-oferecidas-count', user?.id],
+    queryFn: async () => {
+      try {
+        const response = await api.get('/ofertas-rotas', {
+          params: {
+            motoristaId: user?.id,
+            status: 'PENDENTE',
+          },
+        });
+        const dados = response.data?.data?.ofertas || response.data?.ofertas || response.data;
+        return Array.isArray(dados) ? dados : [];
+      } catch (error) {
+        console.error('Erro ao buscar rotas oferecidas:', error);
+        return [];
+      }
+    },
+    enabled: !!user?.id,
+    refetchInterval: 30000, // Atualizar a cada 30 segundos
+  });
+
+  // Buscar rotas agendadas e confirmadas (do dia + dia seguinte)
+  const { data: rotasAceitasOuConfirmadas = [] } = useQuery({
+    queryKey: ['rotas-motorista-count', user?.id],
+    queryFn: async () => {
+      try {
+        const response = await api.get('/rotas', {
+          params: {
+            motoristaId: user?.id,
+            status: ['ACEITA', 'CONFIRMADA', 'EM_ANDAMENTO'],
+          },
+        });
+        const dados = response.data?.data?.rotas || response.data?.rotas || response.data;
+        return Array.isArray(dados) ? dados : [];
+      } catch (error) {
+        console.error('Erro ao buscar rotas confirmadas:', error);
+        return [];
+      }
+    },
+    enabled: !!user?.id,
+    refetchInterval: 30000, // Atualizar a cada 30 segundos
+  });
+
+  // Filtrar rotas do dia + dia seguinte
+  const filtrarRotasProximosDias = useMemo(() => {
+    return (rotas: any[]) => {
+      const hoje = new Date();
+      hoje.setHours(0, 0, 0, 0);
+
+      const amanha = new Date(hoje);
+      amanha.setDate(amanha.getDate() + 1);
+
+      const depoisDeAmanha = new Date(hoje);
+      depoisDeAmanha.setDate(depoisDeAmanha.getDate() + 2);
+
+      return rotas.filter((item: any) => {
+        const rota = item.rota || item;
+        if (!rota.dataRota) return false;
+
+        const dataRota = new Date(rota.dataRota);
+        const dataRotaNormalizada = new Date(
+          dataRota.getUTCFullYear(),
+          dataRota.getUTCMonth(),
+          dataRota.getUTCDate()
+        );
+        dataRotaNormalizada.setHours(0, 0, 0, 0);
+
+        return dataRotaNormalizada >= hoje && dataRotaNormalizada < depoisDeAmanha;
+      });
+    };
+  }, []);
+
+  // Contar ofertas do dia + dia seguinte
+  const quantidadeOfertas = useMemo(() => {
+    return filtrarRotasProximosDias(rotasOferecidas).length;
+  }, [rotasOferecidas, filtrarRotasProximosDias]);
+
+  // Contar rotas agendadas + confirmadas do dia + dia seguinte
+  const quantidadeRotasAgendadasConfirmadas = useMemo(() => {
+    return filtrarRotasProximosDias(rotasAceitasOuConfirmadas).length;
+  }, [rotasAceitasOuConfirmadas, filtrarRotasProximosDias]);
 
   return (
     <div className="min-h-screen bg-gray-50 pb-20">
@@ -126,13 +211,27 @@ export function LayoutMotorista() {
           <NavLink
             to="/motorista/rotas"
             className={({ isActive }) =>
-              `flex flex-col items-center justify-center py-3 px-2 transition-colors flex-1 ${
+              `flex flex-col items-center justify-center py-3 px-2 transition-colors flex-1 relative ${
                 isActive
                   ? 'text-blue-600 bg-blue-50'
                   : 'text-gray-600 hover:text-blue-600 hover:bg-gray-50'
               }`
             }
           >
+            {/* Badge de ofertas (vermelho, acima e à esquerda) */}
+            {quantidadeOfertas > 0 && (
+              <span className="absolute top-1 left-1/4 transform -translate-x-1/2 bg-red-600 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+                {quantidadeOfertas}
+              </span>
+            )}
+
+            {/* Badge de rotas agendadas/confirmadas (verde, à direita) */}
+            {quantidadeRotasAgendadasConfirmadas > 0 && (
+              <span className="absolute top-1 right-1/4 transform translate-x-1/2 bg-green-600 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+                {quantidadeRotasAgendadasConfirmadas}
+              </span>
+            )}
+
             <Truck className="w-6 h-6 mb-1" />
             <span className="text-xs font-medium">Minhas Rotas</span>
           </NavLink>

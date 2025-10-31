@@ -318,9 +318,6 @@ export default function RotasMotorista() {
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-gray-900">🚚 Minhas Rotas</h1>
-        <p className="text-gray-600 mt-1">
-          Gerencie suas rotas oferecidas e confirmadas
-        </p>
       </div>
 
       {/* Rotas Ofertadas */}
