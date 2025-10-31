@@ -3,7 +3,9 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../../services/api';
+import type { OfertaRota, Rota } from '../../types';
 import {
   Box,
   Container,
@@ -31,7 +33,9 @@ import {
   TrendingUp as TrendingUpIcon,
   CheckCircle as CheckIcon,
   Warning as WarningIcon,
-  Schedule as ScheduleIcon
+  Schedule as ScheduleIcon,
+  Close as CloseIcon,
+  AccessTime as AccessTimeIcon
 } from '@mui/icons-material';
 
 // ============================================================================
@@ -120,9 +124,81 @@ const BADGES_CONFIG = {
 export function DashboardMotorista() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<DashboardData | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // ========================================================================
+  // BUSCAR OFERTAS DE ROTAS PENDENTES
+  // ========================================================================
+
+  const { data: rotasOferecidas = [], isLoading: loadingOfertas, refetch: refetchOfertas } = useQuery({
+    queryKey: ['rotas-oferecidas', user?.id],
+    queryFn: async () => {
+      try {
+        const response = await api.get('/ofertas-rotas', {
+          params: {
+            motoristaId: user?.id,
+            status: 'PENDENTE',
+          },
+        });
+        const dados = response.data?.data?.ofertas || response.data?.ofertas || response.data;
+        return Array.isArray(dados) ? dados : [];
+      } catch (error) {
+        console.error('Erro ao buscar rotas oferecidas:', error);
+        return [];
+      }
+    },
+    enabled: !!user?.id,
+  });
+
+  // ========================================================================
+  // MUTATIONS PARA ACEITAR/RECUSAR OFERTAS
+  // ========================================================================
+
+  const aceitarOfertaMutation = useMutation({
+    mutationFn: async (ofertaId: string) => {
+      return api.patch(`/ofertas-rotas/${ofertaId}/aceitar`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['rotas-oferecidas'] });
+      carregarDashboard(); // Atualiza os dados do dashboard também
+    },
+    onError: (error: any) => {
+      alert(error.response?.data?.message || 'Erro ao aceitar oferta');
+    },
+  });
+
+  const recusarOfertaMutation = useMutation({
+    mutationFn: async ({ ofertaId, motivo }: { ofertaId: string; motivo: string }) => {
+      return api.patch(`/ofertas-rotas/${ofertaId}/recusar`, { motivoRecusa: motivo });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['rotas-oferecidas'] });
+      carregarDashboard(); // Atualiza os dados do dashboard também
+    },
+    onError: (error: any) => {
+      alert(error.response?.data?.message || 'Erro ao recusar oferta');
+    },
+  });
+
+  // ========================================================================
+  // HANDLERS PARA ACEITAR/RECUSAR
+  // ========================================================================
+
+  const handleAceitarOferta = (ofertaId: string) => {
+    if (confirm('Deseja aceitar esta rota?')) {
+      aceitarOfertaMutation.mutate(ofertaId);
+    }
+  };
+
+  const handleRecusarOferta = (ofertaId: string) => {
+    const motivo = prompt('Por que você está recusando esta rota? (opcional)');
+    if (motivo !== null) { // Usuário não cancelou o prompt
+      recusarOfertaMutation.mutate({ ofertaId, motivo: motivo || 'Não informado' });
+    }
+  };
 
   // ========================================================================
   // CARREGAR DADOS DO DASHBOARD
@@ -177,6 +253,104 @@ export function DashboardMotorista() {
   }
 
   // ========================================================================
+  // FUNÇÕES AUXILIARES PARA FORMATAÇÃO
+  // ========================================================================
+
+  const normalizarDataUtcParaLocal = (valor: string) => {
+    const parsed = new Date(valor);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return new Date(parsed.getUTCFullYear(), parsed.getUTCMonth(), parsed.getUTCDate());
+  };
+
+  const getDiaDaRota = (dataRota: string) => {
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+
+    const amanha = new Date(hoje);
+    amanha.setDate(amanha.getDate() + 1);
+
+    const dataReferencia = normalizarDataUtcParaLocal(dataRota);
+    const dataComparacao = dataReferencia ? new Date(dataReferencia) : null;
+    if (dataComparacao) {
+      dataComparacao.setHours(0, 0, 0, 0);
+    }
+
+    const dataCompleta = dataReferencia
+      ? dataReferencia.toLocaleDateString('pt-BR', {
+          day: '2-digit',
+          month: 'long',
+          year: 'numeric',
+        })
+      : '';
+
+    if (dataComparacao && dataComparacao.getTime() === hoje.getTime()) {
+      return { texto: 'HOJE', dataCompleta };
+    }
+
+    if (dataComparacao && dataComparacao.getTime() === amanha.getTime()) {
+      return { texto: 'AMANHÃ', dataCompleta };
+    }
+
+    if (dataComparacao) {
+      const diasSemana = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+      return { texto: diasSemana[dataComparacao.getDay()], dataCompleta };
+    }
+
+    return { texto: 'Data indisponível', dataCompleta };
+  };
+
+  const calcularHorarioColeta = (horaInicio?: string | null) => {
+    if (!horaInicio) return '';
+
+    const formatoHorarioSimples = /^(\d{2}):(\d{2})/;
+    let referencia: Date | null = null;
+
+    const correspondenciaSimples = formatoHorarioSimples.exec(horaInicio);
+    if (correspondenciaSimples) {
+      const hora = Number(correspondenciaSimples[1]);
+      const minuto = Number(correspondenciaSimples[2]);
+      referencia = new Date();
+      referencia.setHours(hora, minuto, 0, 0);
+    } else {
+      const parsed = new Date(horaInicio);
+      if (!Number.isNaN(parsed.getTime())) {
+        referencia = parsed;
+      }
+    }
+
+    if (!referencia) return '';
+
+    const dataColeta = new Date(referencia.getTime() - 45 * 60 * 1000);
+    return dataColeta.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  };
+
+  const formatHoraRota = (valor?: string | null) => {
+    if (!valor) return '';
+    const parsed = new Date(valor);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    }
+
+    if (typeof valor === 'string' && valor.includes(':')) {
+      return valor.substring(0, 5);
+    }
+
+    return '';
+  };
+
+  const calcularValorEstimado = (rota: Rota) => {
+    if (rota.valorProjetado !== undefined && rota.valorProjetado !== null) {
+      return Number(rota.valorProjetado).toFixed(2);
+    }
+
+    const valorHora = rota.valorHora ?? 0;
+    const horas = rota.tamanhoHoras ?? rota.horasEstimadas ?? 0;
+    return Number(valorHora * horas).toFixed(2);
+  };
+
+  const obterDuracaoHoras = (rota: Rota) => rota.tamanhoHoras ?? rota.horasEstimadas ?? 0;
+
+  // ========================================================================
   // CONFIGURAÇÃO DO BADGE ATUAL
   // ========================================================================
 
@@ -189,11 +363,11 @@ export function DashboardMotorista() {
 
   return (
     <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
-      
+
       {/* ====================================================================== */}
       {/* HEADER COM BOAS-VINDAS */}
       {/* ====================================================================== */}
-      
+
       <Box sx={{ mb: 4 }}>
         <Typography variant="h4" gutterBottom>
           Olá, {data.motorista.nomeCompleto.split(' ')[0]}! 👋
@@ -203,6 +377,197 @@ export function DashboardMotorista() {
         </Typography>
       </Box>
 
+      {/* ====================================================================== */}
+      {/* CARD DE DESTAQUE: OFERTAS DE ROTAS PENDENTES */}
+      {/* ====================================================================== */}
+
+      {rotasOferecidas.length > 0 && (
+        <Box sx={{ mb: 4 }}>
+          {rotasOferecidas.map((oferta: OfertaRota) => {
+            const rota = oferta.rota!;
+            const dia = getDiaDaRota(rota.dataRota);
+            const horarioColeta = calcularHorarioColeta(rota.horaInicio);
+            const valorEstimado = calcularValorEstimado(rota);
+            const origem: any = (rota as any).localOrigem || (rota as any).local;
+            const nomeOrigem = origem?.nome || 'Local não informado';
+            const enderecoOrigem = origem
+              ? `${origem.endereco || ''}${origem.cidade ? `, ${origem.cidade}` : ''}${
+                  origem.estado ? ` - ${origem.estado}` : ''
+                }`
+              : '';
+
+            return (
+              <Card
+                key={oferta.id}
+                sx={{
+                  mb: 2,
+                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                  color: 'white',
+                  boxShadow: '0 8px 32px rgba(102, 126, 234, 0.4)',
+                  border: '2px solid rgba(255, 255, 255, 0.2)'
+                }}
+              >
+                <CardContent sx={{ pb: 1 }}>
+                  {/* Cabeçalho com Notificação */}
+                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
+                    <NotificationIcon sx={{ fontSize: 48, mr: 2 }} />
+                    <Box sx={{ flex: 1 }}>
+                      <Typography variant="h5" sx={{ fontWeight: 'bold', mb: 0.5 }}>
+                        🚨 Nova Rota Disponível!
+                      </Typography>
+                      <Typography variant="body2" sx={{ opacity: 0.95 }}>
+                        Aceite agora para garantir esta rota
+                      </Typography>
+                    </Box>
+                  </Box>
+
+                  <Divider sx={{ bgcolor: 'rgba(255,255,255,0.3)', mb: 3 }} />
+
+                  {/* Informação do Dia da Rota */}
+                  <Box sx={{ mb: 3 }}>
+                    <Paper
+                      elevation={0}
+                      sx={{
+                        p: 2,
+                        bgcolor: 'rgba(255, 255, 255, 0.2)',
+                        backdropFilter: 'blur(10px)',
+                        textAlign: 'center'
+                      }}
+                    >
+                      <Typography variant="h4" sx={{ fontWeight: 'bold', mb: 0.5 }}>
+                        {dia.texto}
+                      </Typography>
+                      {dia.dataCompleta && (
+                        <Typography variant="body2" sx={{ opacity: 0.9 }}>
+                          {dia.dataCompleta}
+                        </Typography>
+                      )}
+                    </Paper>
+                  </Box>
+
+                  {/* Grid com Informações da Rota */}
+                  <Grid container spacing={2} sx={{ mb: 3 }}>
+                    <Grid item xs={6} md={3}>
+                      <Paper elevation={0} sx={{ p: 2, bgcolor: 'rgba(255, 255, 255, 0.15)', textAlign: 'center' }}>
+                        <AccessTimeIcon sx={{ fontSize: 28, mb: 1 }} />
+                        <Typography variant="caption" sx={{ display: 'block', opacity: 0.9, mb: 0.5 }}>
+                          Horário de Coleta
+                        </Typography>
+                        <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+                          {horarioColeta}
+                        </Typography>
+                      </Paper>
+                    </Grid>
+                    <Grid item xs={6} md={3}>
+                      <Paper elevation={0} sx={{ p: 2, bgcolor: 'rgba(255, 255, 255, 0.15)', textAlign: 'center' }}>
+                        <ScheduleIcon sx={{ fontSize: 28, mb: 1 }} />
+                        <Typography variant="caption" sx={{ display: 'block', opacity: 0.9, mb: 0.5 }}>
+                          Início da Rota
+                        </Typography>
+                        <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+                          {formatHoraRota(rota.horaInicio)}
+                        </Typography>
+                      </Paper>
+                    </Grid>
+                    <Grid item xs={6} md={3}>
+                      <Paper elevation={0} sx={{ p: 2, bgcolor: 'rgba(255, 255, 255, 0.15)', textAlign: 'center' }}>
+                        <TruckIcon sx={{ fontSize: 28, mb: 1 }} />
+                        <Typography variant="caption" sx={{ display: 'block', opacity: 0.9, mb: 0.5 }}>
+                          Duração
+                        </Typography>
+                        <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+                          {obterDuracaoHoras(rota)}h
+                        </Typography>
+                      </Paper>
+                    </Grid>
+                    <Grid item xs={6} md={3}>
+                      <Paper elevation={0} sx={{ p: 2, bgcolor: 'rgba(76, 175, 80, 0.3)', textAlign: 'center' }}>
+                        <MoneyIcon sx={{ fontSize: 28, mb: 1 }} />
+                        <Typography variant="caption" sx={{ display: 'block', opacity: 0.9, mb: 0.5 }}>
+                          Valor Estimado
+                        </Typography>
+                        <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+                          R$ {valorEstimado}
+                        </Typography>
+                      </Paper>
+                    </Grid>
+                  </Grid>
+
+                  {/* Informações Adicionais */}
+                  <Box sx={{ mb: 2 }}>
+                    <Paper elevation={0} sx={{ p: 2, bgcolor: 'rgba(255, 255, 255, 0.15)' }}>
+                      <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 1 }}>
+                        📍 Local de Origem
+                      </Typography>
+                      <Typography variant="body1" sx={{ mb: 0.5 }}>
+                        {nomeOrigem}
+                      </Typography>
+                      {enderecoOrigem && (
+                        <Typography variant="body2" sx={{ opacity: 0.9 }}>
+                          {enderecoOrigem}
+                        </Typography>
+                      )}
+                    </Paper>
+                  </Box>
+
+                  {rota.descricao && (
+                    <Box sx={{ mb: 2 }}>
+                      <Typography variant="body2" sx={{ opacity: 0.9 }}>
+                        <strong>Descrição:</strong> {rota.descricao}
+                      </Typography>
+                    </Box>
+                  )}
+                </CardContent>
+
+                <CardActions sx={{ p: 2, pt: 0, gap: 2 }}>
+                  <Button
+                    fullWidth
+                    variant="contained"
+                    size="large"
+                    startIcon={<CheckIcon />}
+                    onClick={() => handleAceitarOferta(oferta.id)}
+                    disabled={aceitarOfertaMutation.isPending}
+                    sx={{
+                      backgroundColor: 'white',
+                      color: '#667eea',
+                      fontWeight: 'bold',
+                      py: 1.5,
+                      '&:hover': {
+                        backgroundColor: 'rgba(255, 255, 255, 0.9)',
+                        transform: 'scale(1.02)',
+                      },
+                      transition: 'all 0.2s'
+                    }}
+                  >
+                    {aceitarOfertaMutation.isPending ? 'Aceitando...' : 'Aceitar Rota'}
+                  </Button>
+                  <Button
+                    fullWidth
+                    variant="outlined"
+                    size="large"
+                    startIcon={<CloseIcon />}
+                    onClick={() => handleRecusarOferta(oferta.id)}
+                    disabled={recusarOfertaMutation.isPending}
+                    sx={{
+                      borderColor: 'white',
+                      color: 'white',
+                      fontWeight: 'bold',
+                      py: 1.5,
+                      '&:hover': {
+                        borderColor: 'white',
+                        backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                      },
+                    }}
+                  >
+                    {recusarOfertaMutation.isPending ? 'Recusando...' : 'Recusar'}
+                  </Button>
+                </CardActions>
+              </Card>
+            );
+          })}
+        </Box>
+      )}
+
       <Grid container spacing={3}>
         
         {/* ================================================================== */}
@@ -210,44 +575,6 @@ export function DashboardMotorista() {
         {/* ================================================================== */}
         
         <Grid item xs={12} md={8}>
-          
-          {/* CARD: ROTAS PENDENTES (PRIORIDADE) */}
-          {data.rotasPendentes.quantidade > 0 && (
-            <Card 
-              sx={{ 
-                mb: 3, 
-                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                color: 'white'
-              }}
-            >
-              <CardContent>
-                <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                  <NotificationIcon sx={{ fontSize: 40, mr: 2 }} />
-                  <Box>
-                    <Typography variant="h6">
-                      🚨 Você tem {data.rotasPendentes.quantidade} rota(s) disponível(is)!
-                    </Typography>
-                    <Typography variant="body2" sx={{ opacity: 0.9 }}>
-                      Próxima: {data.rotasPendentes.proximaData} - Turno {data.rotasPendentes.turno}
-                    </Typography>
-                  </Box>
-                </Box>
-              </CardContent>
-              <CardActions>
-                <Button 
-                  variant="contained" 
-                  sx={{ 
-                    backgroundColor: 'white', 
-                    color: '#667eea',
-                    '&:hover': { backgroundColor: '#f0f0f0' }
-                  }}
-                  onClick={() => navigate('/motorista/rotas')}
-                >
-                  Ver Rotas Disponíveis
-                </Button>
-              </CardActions>
-            </Card>
-          )}
 
           {/* CARD: DISPONIBILIDADE */}
           <Card sx={{ mb: 3 }}>
