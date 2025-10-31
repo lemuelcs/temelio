@@ -218,7 +218,7 @@ export default function GestaoDisponibilidadesResumo() {
             <div className="text-right">
               <p className="text-sm text-gray-600">Total de motoristas</p>
               <p className="text-3xl font-bold text-blue-600">
-                {resumo.totalGeral.reduce((acc, val) => Math.max(acc, val), 0)}
+                {resumo.totalMotoristas}
               </p>
             </div>
           )}
