@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Search, Edit, CheckCircle, XCircle, User, RefreshCw, MessageCircle, Download, ArrowUpDown, ChevronUp, ChevronDown } from 'lucide-react';
+import { Plus, Search, Edit, CheckCircle, XCircle, User, RefreshCw, MessageCircle, Download, ArrowUpDown, ChevronUp, ChevronDown, Users, UserX, AlertTriangle, Rocket, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import api from '../../services/api';
 
@@ -140,31 +140,95 @@ export default function Motoristas() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [exportandoCsv, setExportandoCsv] = useState(false);
   const [sortConfig, setSortConfig] = useState<{ coluna: SortColumn; direcao: 'asc' | 'desc' } | null>(null);
-  
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(50);
+
   const queryClient = useQueryClient();
   const location = useLocation();
   const navigate = useNavigate();
 
-  // Buscar motoristas
-  const { data: motoristas = [], isLoading } = useQuery({
-    queryKey: ['motoristas'],
+  // Buscar motoristas com paginação
+  const { data: motoristaData, isLoading } = useQuery({
+    queryKey: ['motoristas', page, limit, filterStatus, filterTipo, searchTerm],
     queryFn: async () => {
       try {
-        const response = await api.get('/gestao/motoristas');
-        const dados = response.data?.data?.motoristas || response.data?.motoristas || response.data;
-        const motoristasArray = Array.isArray(dados) ? dados : [];
-
-        // Ordenar por updatedAt DESC
-        return motoristasArray.sort((a: any, b: any) => {
-          const dateA = new Date(a.updatedAt || a.createdAt || 0);
-          const dateB = new Date(b.updatedAt || b.createdAt || 0);
-          return dateB.getTime() - dateA.getTime();
+        const params = new URLSearchParams({
+          page: page.toString(),
+          limit: limit.toString(),
         });
+
+        // Adicionar filtros se houver
+        if (searchTerm) {
+          params.append('busca', searchTerm);
+        }
+
+        // Filtro de status
+        if (filterStatus && filterStatus !== 'ATIVOS_ONBOARDING' && filterStatus !== 'TODOS') {
+          params.append('status', filterStatus);
+        } else if (filterStatus === 'ATIVOS_ONBOARDING') {
+          params.append('status', 'ATIVO');
+          params.append('status', 'ONBOARDING');
+        }
+
+        // Filtro de tipo de veículo
+        if (filterTipo) {
+          params.append('tipoVeiculo', filterTipo);
+        }
+
+        const response = await api.get(`/gestao/motoristas?${params.toString()}`);
+        const dados = response.data?.data || response.data;
+
+        return {
+          motoristas: Array.isArray(dados.motoristas) ? dados.motoristas : [],
+          total: dados.total || 0,
+          pagination: dados.pagination || response.data?.pagination || {
+            page: page,
+            limit: limit,
+            total: dados.total || 0,
+            totalPages: Math.ceil((dados.total || 0) / limit)
+          }
+        };
       } catch (_error) {
-        return [];
+        return {
+          motoristas: [],
+          total: 0,
+          pagination: { page: 1, limit: 50, total: 0, totalPages: 0 }
+        };
       }
     },
   });
+
+  const motoristas = motoristaData?.motoristas || [];
+  const totalMotoristas = motoristaData?.total || 0;
+  const pagination = motoristaData?.pagination || { page: 1, limit: 50, total: 0, totalPages: 0 };
+
+  // Buscar estatísticas totais (sem paginação) para os boxes
+  const { data: statsData } = useQuery({
+    queryKey: ['motoristas-stats'],
+    queryFn: async () => {
+      try {
+        const response = await api.get('/gestao/motoristas?limit=1000'); // buscar todos para contar
+        const dados = response.data?.data || response.data;
+        const todosMotoristas = Array.isArray(dados.motoristas) ? dados.motoristas : [];
+
+        return {
+          ativos: todosMotoristas.filter((m: any) => m.status === 'ATIVO').length,
+          inativos: todosMotoristas.filter((m: any) => m.status === 'INATIVO').length,
+          inelegiveis: todosMotoristas.filter((m: any) => m.status === 'SUSPENSO' || m.status === 'EXCLUIDO').length,
+          onboarding: todosMotoristas.filter((m: any) => m.status === 'ONBOARDING').length,
+        };
+      } catch (_error) {
+        return {
+          ativos: 0,
+          inativos: 0,
+          inelegiveis: 0,
+          onboarding: 0,
+        };
+      }
+    },
+  });
+
+  const stats = statsData || { ativos: 0, inativos: 0, inelegiveis: 0, onboarding: 0 };
 
   const importarMotoristasMutation = useMutation({
     mutationFn: async (formData: FormData) => {
@@ -182,6 +246,7 @@ export default function Motoristas() {
       const ignorados = resumo?.ignorados ?? 0;
       alert(`Importação concluída: ${importados} novo(s), ${atualizados} atualizado(s), ${ignorados} ignorado(s).`);
       queryClient.invalidateQueries({ queryKey: ['motoristas'] });
+      queryClient.invalidateQueries({ queryKey: ['motoristas-stats'] });
     },
     onError: (error: any) => {
       const mensagem = error?.response?.data?.message || 'Erro ao importar motoristas';
@@ -189,19 +254,10 @@ export default function Motoristas() {
     },
   });
 
-  const motoristasOrdenados = useMemo(() => {
-    const parseDate = (value?: string) => {
-      if (!value) return 0;
-      const parsed = new Date(value).getTime();
-      return Number.isNaN(parsed) ? 0 : parsed;
-    };
-
-    return [...motoristas].sort((a: any, b: any) => {
-      const dataB = parseDate(b.updatedAt || b.dataAtualizacao || b.createdAt);
-      const dataA = parseDate(a.updatedAt || a.dataAtualizacao || a.createdAt);
-      return dataB - dataA;
-    });
-  }, [motoristas]);
+  // Resetar para página 1 quando filtros mudarem
+  useEffect(() => {
+    setPage(1);
+  }, [searchTerm, filterStatus, filterTipo]);
 
   // Aplicar filtros vindos da página de alertas
   useEffect(() => {
@@ -217,66 +273,46 @@ export default function Motoristas() {
     }
   }, [location.state, location.pathname, navigate]);
 
-  // Filtrar motoristas
+  // Filtrar motoristas localmente apenas para alertas
   const filteredMotoristas = useMemo(() => {
-    const normalizedSearch = searchTerm.trim().toLowerCase();
-    const statusFiltro = (() => {
-      if (!filterStatus || filterStatus === 'ATIVOS_ONBOARDING') {
-        return ['ATIVO', 'ONBOARDING'];
-      }
-      if (filterStatus === 'TODOS') {
-        return null;
-      }
-      return [filterStatus];
-    })();
+    let lista = [...motoristas];
 
-    const filtrados = motoristasOrdenados.filter((m: any) => {
-      const matchesSearch =
-        !normalizedSearch ||
-        (m.nomeCompleto || '').toLowerCase().includes(normalizedSearch) ||
-        (m.cpf || '').includes(normalizedSearch) ||
-        (m.email || '').toLowerCase().includes(normalizedSearch) ||
-        (m.celular || '').includes(normalizedSearch) ||
-        (m.transporterId || '').toLowerCase().includes(normalizedSearch);
-
-      const matchesStatus = !statusFiltro ? true : statusFiltro.includes(m.status);
-      const matchesTipo = !filterTipo || m.tipoVeiculo === filterTipo;
-      const matchesAlertFilter =
-        alertMotoristaIds.length === 0 || alertMotoristaIds.includes(m.id);
-
-      return matchesSearch && matchesStatus && matchesTipo && matchesAlertFilter;
-    });
-    
-    if (!sortConfig) {
-      return filtrados;
+    // Aplicar filtro de alertas se houver
+    if (alertMotoristaIds.length > 0) {
+      lista = lista.filter((m: any) => alertMotoristaIds.includes(m.id));
     }
 
-    const extrairValorOrdenacao = (motorista: any) => {
-      switch (sortConfig.coluna) {
-        case 'nome':
-          return (motorista.nomeCompleto || '').toLowerCase();
-        case 'cpf':
-          return (motorista.cpf || '').replace(/\D/g, '');
-        case 'veiculo':
-          return TIPO_VEICULO_LABELS[motorista.tipoVeiculo] || motorista.tipoVeiculo || '';
-        case 'status':
-          return motorista.status || '';
-        default:
-          return '';
-      }
-    };
+    // Aplicar ordenação local se houver
+    if (sortConfig) {
+      const extrairValorOrdenacao = (motorista: any) => {
+        switch (sortConfig.coluna) {
+          case 'nome':
+            return (motorista.nomeCompleto || '').toLowerCase();
+          case 'cpf':
+            return (motorista.cpf || '').replace(/\D/g, '');
+          case 'veiculo':
+            return TIPO_VEICULO_LABELS[motorista.tipoVeiculo] || motorista.tipoVeiculo || '';
+          case 'status':
+            return motorista.status || '';
+          default:
+            return '';
+        }
+      };
 
-    return [...filtrados].sort((a: any, b: any) => {
-      const valorA = extrairValorOrdenacao(a);
-      const valorB = extrairValorOrdenacao(b);
+      lista.sort((a: any, b: any) => {
+        const valorA = extrairValorOrdenacao(a);
+        const valorB = extrairValorOrdenacao(b);
 
-      if (valorA === valorB) return 0;
-      if (valorA > valorB) {
-        return sortConfig.direcao === 'asc' ? 1 : -1;
-      }
-      return sortConfig.direcao === 'asc' ? -1 : 1;
-    });
-  }, [motoristasOrdenados, searchTerm, filterStatus, filterTipo, alertMotoristaIds, sortConfig]);
+        if (valorA === valorB) return 0;
+        if (valorA > valorB) {
+          return sortConfig.direcao === 'asc' ? 1 : -1;
+        }
+        return sortConfig.direcao === 'asc' ? -1 : 1;
+      });
+    }
+
+    return lista;
+  }, [motoristas, alertMotoristaIds, sortConfig]);
 
   const handleEdit = (id: string) => {
     setEditingId(id);
@@ -287,6 +323,15 @@ export default function Motoristas() {
     setSelectedMotoristaId(id);
     setSelectedMotoristaStatus(currentStatus);
     setShowStatusModal(true);
+  };
+
+  const handleFilterByStatus = (status: string) => {
+    setFilterStatus(status);
+    setSearchTerm('');
+    setFilterTipo('');
+    setAlertMotoristaIds([]);
+    setAlertFilterLabel(null);
+    setPage(1);
   };
 
   const handleDownloadTemplate = async () => {
@@ -431,6 +476,80 @@ export default function Motoristas() {
             Novo Motorista
           </button>
         </div>
+      </div>
+
+      {/* Boxes de Indicadores */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        {/* Box 1: Motoristas Ativos */}
+        <button
+          onClick={() => handleFilterByStatus('ATIVO')}
+          className="bg-green-50 border border-green-200 rounded-lg p-4 hover:shadow-md transition-shadow text-left"
+        >
+          <div className="flex items-center gap-3">
+            <div className="p-3 bg-green-100 rounded-lg">
+              <Users className="w-6 h-6 text-green-600" />
+            </div>
+            <div>
+              <p className="text-sm text-gray-600">Motoristas Ativos</p>
+              <p className="text-2xl font-bold text-green-900">{stats.ativos}</p>
+            </div>
+          </div>
+        </button>
+
+        {/* Box 2: Motoristas Inativos */}
+        <button
+          onClick={() => handleFilterByStatus('INATIVO')}
+          className="bg-gray-50 border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow text-left"
+        >
+          <div className="flex items-center gap-3">
+            <div className="p-3 bg-gray-100 rounded-lg">
+              <UserX className="w-6 h-6 text-gray-600" />
+            </div>
+            <div>
+              <p className="text-sm text-gray-600">Motoristas Inativos</p>
+              <p className="text-2xl font-bold text-gray-900">{stats.inativos}</p>
+            </div>
+          </div>
+        </button>
+
+        {/* Box 3: Motoristas Inelegíveis */}
+        <button
+          onClick={() => {
+            setFilterStatus('SUSPENSO');
+            setSearchTerm('');
+            setFilterTipo('');
+            setAlertMotoristaIds([]);
+            setAlertFilterLabel(null);
+            setPage(1);
+          }}
+          className="bg-red-50 border border-red-200 rounded-lg p-4 hover:shadow-md transition-shadow text-left"
+        >
+          <div className="flex items-center gap-3">
+            <div className="p-3 bg-red-100 rounded-lg">
+              <AlertTriangle className="w-6 h-6 text-red-600" />
+            </div>
+            <div>
+              <p className="text-sm text-gray-600">Motoristas Inelegíveis</p>
+              <p className="text-2xl font-bold text-red-900">{stats.inelegiveis}</p>
+            </div>
+          </div>
+        </button>
+
+        {/* Box 4: Motoristas em Onboarding */}
+        <button
+          onClick={() => handleFilterByStatus('ONBOARDING')}
+          className="bg-blue-50 border border-blue-200 rounded-lg p-4 hover:shadow-md transition-shadow text-left"
+        >
+          <div className="flex items-center gap-3">
+            <div className="p-3 bg-blue-100 rounded-lg">
+              <Rocket className="w-6 h-6 text-blue-600" />
+            </div>
+            <div>
+              <p className="text-sm text-gray-600">Motoristas em Onboarding</p>
+              <p className="text-2xl font-bold text-blue-900">{stats.onboarding}</p>
+            </div>
+          </div>
+        </button>
       </div>
 
       {/* Filtros */}
@@ -656,6 +775,85 @@ export default function Motoristas() {
             </table>
           </div>
         )}
+
+        {/* Controles de Paginação */}
+        {!isLoading && filteredMotoristas.length > 0 && (
+          <div className="px-6 py-4 border-t border-gray-200 bg-gray-50">
+            <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+              {/* Informações e Seletor de Limite */}
+              <div className="flex items-center gap-4">
+                <div className="text-sm text-gray-600">
+                  Mostrando {((page - 1) * limit) + 1} a {Math.min(page * limit, totalMotoristas)} de {totalMotoristas} motoristas
+                </div>
+                <div className="flex items-center gap-2">
+                  <label className="text-sm text-gray-600">Linhas por página:</label>
+                  <select
+                    value={limit}
+                    onChange={(e) => {
+                      setLimit(Number(e.target.value));
+                      setPage(1);
+                    }}
+                    className="px-3 py-1 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                  >
+                    <option value={20}>20</option>
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Controles de Navegação */}
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setPage(Math.max(1, page - 1))}
+                  disabled={page === 1}
+                  className="flex items-center gap-1 px-3 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                  Anterior
+                </button>
+
+                <div className="flex items-center gap-1">
+                  {Array.from({ length: Math.min(5, pagination.totalPages) }, (_, i) => {
+                    let pageNum;
+                    if (pagination.totalPages <= 5) {
+                      pageNum = i + 1;
+                    } else if (page <= 3) {
+                      pageNum = i + 1;
+                    } else if (page >= pagination.totalPages - 2) {
+                      pageNum = pagination.totalPages - 4 + i;
+                    } else {
+                      pageNum = page - 2 + i;
+                    }
+
+                    return (
+                      <button
+                        key={pageNum}
+                        onClick={() => setPage(pageNum)}
+                        className={`px-3 py-2 rounded-lg text-sm font-medium transition ${
+                          page === pageNum
+                            ? 'bg-blue-600 text-white'
+                            : 'text-gray-700 hover:bg-gray-100'
+                        }`}
+                      >
+                        {pageNum}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <button
+                  onClick={() => setPage(Math.min(pagination.totalPages, page + 1))}
+                  disabled={page === pagination.totalPages}
+                  className="flex items-center gap-1 px-3 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Próximo
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Modals */}
@@ -701,6 +899,7 @@ function StatusModal({ motoristaId, currentStatus, onClose }: { motoristaId: str
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['motoristas'] });
+      queryClient.invalidateQueries({ queryKey: ['motoristas-stats'] });
       onClose();
     },
     onError: (error: any) => {
@@ -960,6 +1159,7 @@ function MotoristaModal({ motoristaId, onClose }: { motoristaId: string | null; 
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['motoristas'] });
+      queryClient.invalidateQueries({ queryKey: ['motoristas-stats'] });
       onClose();
     },
     onError: (error: any) => {
