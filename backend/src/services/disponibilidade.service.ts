@@ -360,6 +360,7 @@ class DisponibilidadeService {
       include: {
         motorista: {
           select: {
+            id: true,
             tipoVeiculo: true
           }
         }
@@ -369,10 +370,16 @@ class DisponibilidadeService {
     // Agrupar por data, ciclo e tipo de veículo
     const resumo: any = {};
 
+    // Set para contar motoristas únicos
+    const motoristasUnicos = new Set<string>();
+
     disponibilidades.forEach(disp => {
       const dataStr = disp.data.toISOString().split('T')[0];
       const tipoVeiculo = disp.motorista.tipoVeiculo;
       const ciclo = disp.ciclo;
+
+      // Adicionar motorista ao set de únicos
+      motoristasUnicos.add(disp.motorista.id);
 
       if (!resumo[dataStr]) {
         resumo[dataStr] = {};
@@ -389,7 +396,10 @@ class DisponibilidadeService {
       resumo[dataStr][tipoVeiculo][ciclo]++;
     });
 
-    return resumo;
+    return {
+      resumo,
+      totalMotoristas: motoristasUnicos.size
+    };
   }
 
   /**
