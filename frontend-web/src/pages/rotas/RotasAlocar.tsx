@@ -204,7 +204,10 @@ export default function RotasAlocacao() {
             new Date(a.dataRota).getTime() - new Date(b.dataRota).getTime();
           if (dataDiff !== 0) return dataDiff;
 
-          return timeToMinutes(a.horaInicio) - timeToMinutes(b.horaInicio);
+          const horaDiff = timeToMinutes(a.horaInicio) - timeToMinutes(b.horaInicio);
+          if (horaDiff !== 0) return horaDiff;
+
+          return 0;
         });
         return ordenado;
       } catch (_error) {
@@ -257,15 +260,16 @@ export default function RotasAlocacao() {
   // Enviar ofertas de rotas
   const enviarOfertasMutation = useMutation({
     mutationFn: async (alocacoes: Alocacao[]) => {
-      // Enviar cada alocação para o backend
-      const promises = alocacoes.map(async (alocacao) => {
-        return api.post('/ofertas-rotas', {
+      // Enviar cada alocação sequencialmente para evitar conflitos de transação
+      const resultados = [];
+      for (const alocacao of alocacoes) {
+        const resultado = await api.post('/ofertas-rotas', {
           rotaId: alocacao.rotaId,
           motoristaId: alocacao.motoristaId,
         });
-      });
-
-      return Promise.all(promises);
+        resultados.push(resultado);
+      }
+      return resultados;
     },
     onSuccess: () => {
       alert('Ofertas enviadas com sucesso aos motoristas!');
@@ -591,16 +595,23 @@ export default function RotasAlocacao() {
 
   const isLoading = loadingRotas || loadingMotoristas;
 
-  // Agrupar rotas por local de origem
-  const rotasPorLocal = useMemo(() => {
-    const grupos: Record<string, Rota[]> = {};
+  // Agrupar rotas por local de origem e tipo de veículo
+  const rotasPorLocalETipo = useMemo(() => {
+    const grupos: Record<string, Record<string, Rota[]>> = {};
 
     rotas.forEach((rota) => {
       const nomeLocal = rota.local?.nome || 'Sem Local';
+      const tipoVeiculo = rota.tipoVeiculo || 'Sem Tipo';
+
       if (!grupos[nomeLocal]) {
-        grupos[nomeLocal] = [];
+        grupos[nomeLocal] = {};
       }
-      grupos[nomeLocal].push(rota);
+
+      if (!grupos[nomeLocal][tipoVeiculo]) {
+        grupos[nomeLocal][tipoVeiculo] = [];
+      }
+
+      grupos[nomeLocal][tipoVeiculo].push(rota);
     });
 
     return grupos;
@@ -608,8 +619,8 @@ export default function RotasAlocacao() {
 
   // Obter locais ordenados alfabeticamente (apenas com rotas)
   const locaisComRotas = useMemo(() => {
-    return Object.keys(rotasPorLocal).sort();
-  }, [rotasPorLocal]);
+    return Object.keys(rotasPorLocalETipo).sort();
+  }, [rotasPorLocalETipo]);
 
   return (
     <div className="space-y-6">
@@ -757,22 +768,45 @@ export default function RotasAlocacao() {
             <p className="text-gray-600">Nenhuma rota disponível para alocação</p>
           </div>
         ) : (
-          locaisComRotas.map((nomeLocal) => (
-            <div key={nomeLocal} className="bg-white rounded-lg shadow overflow-hidden">
-              {/* Cabeçalho do Local */}
-              <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-4 py-3">
-                <div className="flex items-center gap-2">
-                  <MapPin className="w-5 h-5 text-white" />
-                  <h2 className="text-lg font-bold text-white">{nomeLocal}</h2>
-                  <span className="ml-auto bg-white/20 text-white px-3 py-1 rounded-full text-sm font-semibold">
-                    {rotasPorLocal[nomeLocal].length} {rotasPorLocal[nomeLocal].length === 1 ? 'rota' : 'rotas'}
-                  </span>
-                </div>
-              </div>
+          locaisComRotas.map((nomeLocal) => {
+            const tiposDeVeiculo = Object.keys(rotasPorLocalETipo[nomeLocal]).sort();
+            const totalRotasLocal = Object.values(rotasPorLocalETipo[nomeLocal])
+              .reduce((acc, rotas) => acc + rotas.length, 0);
 
-              {/* Rotas do Local */}
-              <div className="divide-y divide-gray-200">
-                {rotasPorLocal[nomeLocal].map((rota: Rota) => {
+            return (
+              <div key={nomeLocal} className="bg-white rounded-lg shadow overflow-hidden">
+                {/* Cabeçalho do Local */}
+                <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <MapPin className="w-5 h-5 text-white" />
+                    <h2 className="text-lg font-bold text-white">{nomeLocal}</h2>
+                    <span className="ml-auto bg-white/20 text-white px-3 py-1 rounded-full text-sm font-semibold">
+                      {totalRotasLocal} {totalRotasLocal === 1 ? 'rota' : 'rotas'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Rotas agrupadas por tipo de veículo */}
+                {tiposDeVeiculo.map((tipoVeiculo) => {
+                  const rotasDoTipo = rotasPorLocalETipo[nomeLocal][tipoVeiculo];
+
+                  return (
+                    <div key={tipoVeiculo}>
+                      {/* Cabeçalho do Tipo de Veículo */}
+                      <div className="bg-gray-100 px-4 py-2 border-b border-gray-200">
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-sm font-semibold text-gray-700">
+                            {getTipoVeiculoLabel(tipoVeiculo)}
+                          </h3>
+                          <span className="bg-gray-200 text-gray-700 px-2 py-0.5 rounded-full text-xs font-medium">
+                            {rotasDoTipo.length} {rotasDoTipo.length === 1 ? 'rota' : 'rotas'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Rotas do Tipo */}
+                      <div className="divide-y divide-gray-200">
+                        {rotasDoTipo.map((rota: Rota) => {
               const motoristasElegiveis = getMotoristasPorRota(rota);
               const alocacao = alocacoes.find((a) => a.rotaId === rota.id);
               const motoristaSelecionado = alocacao
@@ -982,11 +1016,15 @@ export default function RotasAlocacao() {
                     </div>
                   </div>
                 </div>
-              );
-            })}
+                        );
+                      })}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
 
