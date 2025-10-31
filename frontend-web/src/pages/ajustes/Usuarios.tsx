@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, Search, Edit, Trash2, AlertCircle, X, Key, UserCheck, UserX, Shield, User, Truck } from 'lucide-react';
 import api from '../../services/api';
@@ -57,19 +57,21 @@ function UsuarioModal({ usuarioId, onClose }: { usuarioId: string | null; onClos
       return response.data?.data;
     },
     enabled: !!usuarioId,
-    onSuccess: (data) => {
-      if (data) {
-        setFormData({
-          email: data.email || '',
-          nome: data.nome || '',
-          perfil: data.perfil || 'DESPACHANTE_PLANEJADOR',
-          senha: '',
-          confirmarSenha: '',
-          deveAlterarSenha: data.deveAlterarSenha || false
-        });
-      }
-    }
   });
+
+  // Atualizar formulário quando dados do usuário forem carregados
+  useEffect(() => {
+    if (usuario) {
+      setFormData({
+        email: usuario.email || '',
+        nome: usuario.nome || '',
+        perfil: usuario.perfil || 'DESPACHANTE_PLANEJADOR',
+        senha: '',
+        confirmarSenha: '',
+        deveAlterarSenha: usuario.deveAlterarSenha || false
+      });
+    }
+  }, [usuario]);
 
   // Mutation para criar/atualizar
   const saveMutation = useMutation({
