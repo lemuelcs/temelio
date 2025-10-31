@@ -1038,6 +1038,89 @@ class MotoristaController {
       next(error);
     }
   }
+
+  /**
+   * Listar aniversariantes da semana
+   */
+  async listarAniversariantes(req: Request, res: Response, next: NextFunction) {
+    try {
+      // Buscar todos os motoristas com data de nascimento
+      const motoristas = await prisma.motorista.findMany({
+        where: {
+          dataNascimento: { not: null },
+          status: { in: ['ATIVO', 'ONBOARDING'] }
+        },
+        select: {
+          id: true,
+          nomeCompleto: true,
+          dataNascimento: true,
+          celular: true,
+          status: true
+        },
+        orderBy: { nomeCompleto: 'asc' }
+      });
+
+      const hoje = new Date();
+      const diaHoje = hoje.getDate();
+      const mesHoje = hoje.getMonth() + 1;
+
+      // Calcular o início e fim da semana atual
+      const inicioSemana = new Date(hoje);
+      inicioSemana.setDate(hoje.getDate() - hoje.getDay());
+
+      const fimSemana = new Date(inicioSemana);
+      fimSemana.setDate(inicioSemana.getDate() + 6);
+
+      const diaInicioSemana = inicioSemana.getDate();
+      const mesInicioSemana = inicioSemana.getMonth() + 1;
+      const diaFimSemana = fimSemana.getDate();
+      const mesFimSemana = fimSemana.getMonth() + 1;
+
+      // Filtrar aniversariantes
+      const aniversariantesSemana = motoristas.filter((motorista) => {
+        if (!motorista.dataNascimento) return false;
+
+        const dataNasc = new Date(motorista.dataNascimento);
+        const diaNasc = dataNasc.getDate();
+        const mesNasc = dataNasc.getMonth() + 1;
+
+        // Se a semana cruza o fim do mês
+        if (mesInicioSemana !== mesFimSemana) {
+          return (
+            (mesNasc === mesInicioSemana && diaNasc >= diaInicioSemana) ||
+            (mesNasc === mesFimSemana && diaNasc <= diaFimSemana)
+          );
+        }
+
+        // Semana no mesmo mês
+        return mesNasc === mesInicioSemana && diaNasc >= diaInicioSemana && diaNasc <= diaFimSemana;
+      });
+
+      const aniversariantesDia = aniversariantesSemana.filter((motorista) => {
+        if (!motorista.dataNascimento) return false;
+        const dataNasc = new Date(motorista.dataNascimento);
+        return dataNasc.getDate() === diaHoje && (dataNasc.getMonth() + 1) === mesHoje;
+      });
+
+      res.json({
+        success: true,
+        data: {
+          totalDia: aniversariantesDia.length,
+          totalSemana: aniversariantesSemana.length,
+          aniversariantes: aniversariantesSemana.map((motorista) => ({
+            id: motorista.id,
+            nomeCompleto: motorista.nomeCompleto,
+            dataNascimento: motorista.dataNascimento,
+            celular: motorista.celular,
+            status: motorista.status,
+            ehHoje: aniversariantesDia.some((a) => a.id === motorista.id)
+          }))
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 export default new MotoristaController();

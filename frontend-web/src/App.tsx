@@ -16,6 +16,7 @@ import RotasMonitoramento from './pages/rotas/RotasMonitoramento';
 import GestaoDisponibilidades from './pages/disponibilidades/GestaoDisponibilidades';
 import GestaoDisponibilidadesResumo from './pages/disponibilidades/GestaoDisponibilidadesResumo';
 import Alertas from './pages/alertas/Alertas';
+import Aniversariantes from './pages/alertas/Aniversariantes';
 import Locais from './pages/ajustes/Locais';
 import Precos from './pages/ajustes/Precos';
 import Usuarios from './pages/ajustes/Usuarios';
@@ -222,7 +223,18 @@ function AppRoutes() {
             </PrivateRoute>
           }
         />
-        
+
+        <Route
+          path="/alertas/aniversariantes"
+          element={
+            <PrivateRoute allowedProfiles={['ADMINISTRADOR', 'DESPACHANTE_PLANEJADOR']}>
+              <Layout>
+                <Aniversariantes />
+              </Layout>
+            </PrivateRoute>
+          }
+        />
+
         {/* AJUSTES - Submenus */}
         <Route
           path="/ajustes/precos"
