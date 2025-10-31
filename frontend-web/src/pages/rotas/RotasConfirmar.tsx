@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle, XCircle, Package, MapPin, Clock, AlertTriangle, Calendar } from 'lucide-react';
+import { CheckCircle, XCircle, Package, MapPin, Clock, AlertTriangle, Calendar, Truck } from 'lucide-react';
 import api from '../../services/api';
 
 interface Rota {
@@ -24,8 +24,7 @@ interface Rota {
 
 export default function RotasConfirmar() {
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
-  const [confirmingId, setConfirmingId] = useState<string | null>(null);
-  
+
   const queryClient = useQueryClient();
 
   // Buscar rotas aceitas do dia
@@ -202,57 +201,14 @@ export default function RotasConfirmar() {
                   </p>
                 </div>
                 {rotasAceitas.map((rota: any, index: number) => (
-                  <div
+                  <RotaConfirmarInline
                     key={rota.id}
-                    className={`px-6 py-5 border-b border-gray-200 ${
-                      index === rotasAceitas.length - 1 && rotasConfirmadas.length === 0 && rotasCanceladas.length === 0
-                        ? 'border-b-0'
-                        : ''
-                    }`}
-                  >
-                    <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-                      <div className="space-y-3">
-                        <div className="flex items-start gap-3">
-                          <div>
-                            <h3 className="font-semibold text-lg text-gray-900">
-                              {rota.motorista?.nomeCompleto || 'Sem motorista'}
-                            </h3>
-                            <p className="text-sm text-gray-500">
-                              {rota.motorista?.celular || 'Sem telefone'}
-                            </p>
-                          </div>
-                          <span className="px-3 py-1 bg-blue-100 text-blue-800 text-xs font-semibold rounded-full">
-                            {getCicloLabel(rota.cicloRota)}
-                          </span>
-                        </div>
-                        <div className="flex flex-wrap gap-4 text-sm text-gray-600">
-                          <span className="inline-flex items-center gap-1">
-                            <MapPin className="w-4 h-4 text-blue-500" />
-                            {rota.local?.nome || 'N/A'}
-                          </span>
-                          <span className="inline-flex items-center gap-1">
-                            <Clock className="w-4 h-4 text-yellow-600" />
-                            {formatTime(rota.horaInicio)}
-                          </span>
-                          <span className="inline-flex items-center gap-1">
-                            <Package className="w-4 h-4 text-green-600" />
-                            {rota.tamanhoHoras}h
-                          </span>
-                          <span className="inline-flex items-center gap-1">
-                            <MapPin className="w-4 h-4 text-purple-600" />
-                            {rota.local?.cidade || 'Sem cidade'}
-                          </span>
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => setConfirmingId(rota.id)}
-                        className="flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition"
-                      >
-                        <CheckCircle className="w-5 h-5" />
-                        Confirmar Rota
-                      </button>
-                    </div>
-                  </div>
+                    rota={rota}
+                    isLast={index === rotasAceitas.length - 1 && rotasConfirmadas.length === 0 && rotasCanceladas.length === 0}
+                    formatTime={formatTime}
+                    getCicloLabel={getCicloLabel}
+                    queryClient={queryClient}
+                  />
                 ))}
               </>
             )}
@@ -369,85 +325,47 @@ export default function RotasConfirmar() {
         )}
       </div>
 
-      {/* Modal de Confirmação */}
-      {confirmingId && (
-        <ConfirmarModal
-          rotaId={confirmingId}
-          onClose={() => setConfirmingId(null)}
-        />
-      )}
     </div>
   );
 }
 
-// Modal de Confirmação
-function ConfirmarModal({ rotaId, onClose }: { rotaId: string; onClose: () => void }) {
-  const queryClient = useQueryClient();
-
+// Componente de confirmação inline
+function RotaConfirmarInline({
+  rota,
+  isLast,
+  formatTime,
+  getCicloLabel,
+  queryClient
+}: {
+  rota: any;
+  isLast: boolean;
+  formatTime: (time: string) => string;
+  getCicloLabel: (ciclo: string) => string;
+  queryClient: any;
+}) {
   const [formData, setFormData] = useState({
-    codigoRota: '',
-    qtdePacotes: 0,
-    qtdeLocais: 0,
-    qtdeParadas: 0,
-    horaInicioReal: '',
-    horaFimReal: '',
+    codigoRota: rota.codigoRota || '',
+    qtdePacotes: rota.qtdePacotes || '',
+    qtdeLocais: rota.qtdeLocais || '',
+    qtdeParadas: rota.qtdeParadas || '',
+    horaInicio: formatTime(rota.horaInicio),
   });
-
-  const formatTimeInput = (value?: string | null) => {
-    if (!value) return '';
-    const parsed = new Date(value);
-    if (!Number.isNaN(parsed.getTime())) {
-      const hours = String(parsed.getHours()).padStart(2, '0');
-      const minutes = String(parsed.getMinutes()).padStart(2, '0');
-      return `${hours}:${minutes}`;
-    }
-
-    if (typeof value === 'string' && value.includes(':')) {
-      return value.substring(0, 5);
-    }
-
-    return '';
-  };
-
-  // Buscar dados da rota
-  const { data: rota, isFetching } = useQuery({
-    queryKey: ['rota', rotaId],
-    queryFn: async () => {
-      const response = await api.get(`/rotas/${rotaId}`);
-      return response.data?.data || response.data;
-    },
-  });
-
-  useEffect(() => {
-    if (!rota) return;
-
-    setFormData({
-      codigoRota: rota.codigoRota || '',
-      qtdePacotes: rota.qtdePacotes ?? 0,
-      qtdeLocais: rota.qtdeLocais ?? 0,
-      qtdeParadas: rota.qtdeParadas ?? 0,
-      horaInicioReal: formatTimeInput(rota.horaInicioReal),
-      horaFimReal: formatTimeInput(rota.horaFimReal),
-    });
-  }, [rota]);
 
   const confirmarMutation = useMutation({
     mutationFn: async (data: any) => {
       const payload = {
         codigoRota: data.codigoRota,
-        qtdePacotes: parseInt(data.qtdePacotes),
-        qtdeLocais: parseInt(data.qtdeLocais),
-        qtdeParadas: parseInt(data.qtdeParadas),
-        horaInicioReal: data.horaInicioReal ? `1970-01-01T${data.horaInicioReal}:00Z` : null,
-        horaFimReal: data.horaFimReal ? `1970-01-01T${data.horaFimReal}:00Z` : null,
+        qtdePacotes: data.qtdePacotes ? parseInt(data.qtdePacotes) : undefined,
+        qtdeLocais: data.qtdeLocais ? parseInt(data.qtdeLocais) : undefined,
+        qtdeParadas: data.qtdeParadas ? parseInt(data.qtdeParadas) : undefined,
+        horaInicioReal: data.horaInicio ? `1970-01-01T${data.horaInicio}:00Z` : null,
       };
 
-      return api.patch(`/rotas/${rotaId}/confirmar`, payload);
+      return api.patch(`/rotas/${rota.id}/confirmar`, payload);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['rotas-confirmar'] });
       queryClient.invalidateQueries({ queryKey: ['rotas'] });
-      onClose();
     },
     onError: (error: any) => {
       const mensagem = error.response?.data?.message || 'Erro ao confirmar rota';
@@ -458,7 +376,7 @@ function ConfirmarModal({ rotaId, onClose }: { rotaId: string; onClose: () => vo
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!formData.codigoRota.trim()) {
       alert('Código da rota é obrigatório!');
       return;
@@ -468,22 +386,43 @@ function ConfirmarModal({ rotaId, onClose }: { rotaId: string; onClose: () => vo
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-lg max-w-2xl w-full">
-        <div className="p-6 border-b border-gray-200">
-          <h2 className="text-xl font-semibold text-gray-900">
-            Confirmar Rota - Roteirização D+0
-          </h2>
-          <p className="text-sm text-gray-600 mt-1">
-            Motorista: {rota?.motorista?.nomeCompleto || 'N/A'}
-          </p>
+    <form
+      onSubmit={handleSubmit}
+      className={`px-6 py-5 border-b border-gray-200 ${isLast ? 'border-b-0' : ''}`}
+    >
+      <div className="space-y-4">
+        {/* Header com motorista e ciclo */}
+        <div className="flex items-start gap-3">
+          <Truck className="w-5 h-5 text-gray-500 mt-1" />
+          <div className="flex-1">
+            <div className="flex items-center gap-3">
+              <h3 className="font-semibold text-lg text-gray-900">
+                {rota.motorista?.nomeCompleto || 'Sem motorista'}
+              </h3>
+              <span className="px-3 py-1 bg-blue-100 text-blue-800 text-xs font-semibold rounded-full">
+                {getCicloLabel(rota.cicloRota)}
+              </span>
+            </div>
+          </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-6">
-          {/* Código da Rota */}
+        {/* Informações básicas */}
+        <div className="flex flex-wrap gap-4 text-sm text-gray-600">
+          <span className="inline-flex items-center gap-1">
+            <Clock className="w-4 h-4 text-yellow-600" />
+            Duração: {rota.tamanhoHoras}h
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <MapPin className="w-4 h-4 text-purple-600" />
+            {rota.local?.cidade || 'Sem cidade'}
+          </span>
+        </div>
+
+        {/* Campos de confirmação */}
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-3 pt-3 border-t border-gray-200">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Código da Rota * <span className="text-red-500">(Gerado pela roteirização)</span>
+            <label className="block text-xs font-medium text-gray-700 mb-1">
+              Código da Rota *
             </label>
             <input
               type="text"
@@ -491,135 +430,77 @@ function ConfirmarModal({ rotaId, onClose }: { rotaId: string; onClose: () => vo
               placeholder="Ex: BSB-C1-001"
               value={formData.codigoRota}
               onChange={(e) => setFormData({ ...formData, codigoRota: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
 
-          {/* Quantidades */}
           <div>
-            <h3 className="text-lg font-medium text-gray-900 mb-4">
-              Detalhes da Roteirização
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Quantidade de Pacotes *
-                </label>
-                <input
-                  type="number"
-                  required
-                  min="1"
-                  value={formData.qtdePacotes}
-                  onChange={(e) => setFormData({ ...formData, qtdePacotes: parseInt(e.target.value) })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Quantidade de Locais *
-                </label>
-                <input
-                  type="number"
-                  required
-                  min="1"
-                  value={formData.qtdeLocais}
-                  onChange={(e) => setFormData({ ...formData, qtdeLocais: parseInt(e.target.value) })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Quantidade de Paradas *
-                </label>
-                <input
-                  type="number"
-                  required
-                  min="1"
-                  value={formData.qtdeParadas}
-                  onChange={(e) => setFormData({ ...formData, qtdeParadas: parseInt(e.target.value) })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-              </div>
-            </div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">
+              Pacotes
+            </label>
+            <input
+              type="number"
+              min="0"
+              placeholder="0"
+              value={formData.qtdePacotes}
+              onChange={(e) => setFormData({ ...formData, qtdePacotes: e.target.value })}
+              className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
           </div>
 
-          {/* Horários Reais (Opcional) */}
           <div>
-            <h3 className="text-lg font-medium text-gray-900 mb-4">
-              Ajuste de Horários (opcional)
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Hora Início Real
-                </label>
-                <input
-                  type="time"
-                  value={formData.horaInicioReal}
-                  onChange={(e) => setFormData({ ...formData, horaInicioReal: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-                <p className="text-xs text-gray-500 mt-1">
-                  Deixe em branco para manter horário original
-                </p>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Hora Fim Real
-                </label>
-                <input
-                  type="time"
-                  value={formData.horaFimReal}
-                  onChange={(e) => setFormData({ ...formData, horaFimReal: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-              </div>
-            </div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">
+              Locais
+            </label>
+            <input
+              type="number"
+              min="0"
+              placeholder="0"
+              value={formData.qtdeLocais}
+              onChange={(e) => setFormData({ ...formData, qtdeLocais: e.target.value })}
+              className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
           </div>
 
-          {/* Informações da Rota Original */}
-          <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-            <h4 className="font-medium text-gray-900 mb-2">Informações da Oferta Original</h4>
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <div>
-                <p className="text-gray-600">Data:</p>
-                <p className="font-medium">{new Date(rota?.dataRota || '').toLocaleDateString('pt-BR')}</p>
-              </div>
-              <div>
-                <p className="text-gray-600">Hora prevista:</p>
-                <p className="font-medium">{rota?.horaInicio?.substring(0, 5) || 'N/A'}</p>
-              </div>
-              <div>
-                <p className="text-gray-600">Duração:</p>
-                <p className="font-medium">{rota?.tamanhoHoras || 0}h</p>
-              </div>
-              <div>
-                <p className="text-gray-600">Ciclo:</p>
-                <p className="font-medium">{rota?.cicloRota || 'N/A'}</p>
-              </div>
-            </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">
+              Paradas
+            </label>
+            <input
+              type="number"
+              min="0"
+              placeholder="0"
+              value={formData.qtdeParadas}
+              onChange={(e) => setFormData({ ...formData, qtdeParadas: e.target.value })}
+              className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
           </div>
 
-          {/* Botões */}
-          <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition"
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              disabled={confirmarMutation.isPending}
-              className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition disabled:opacity-50"
-            >
-              <CheckCircle className="w-5 h-5" />
-              {confirmarMutation.isPending ? 'Confirmando...' : 'Confirmar Rota'}
-            </button>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">
+              Hora Início
+            </label>
+            <input
+              type="time"
+              value={formData.horaInicio}
+              onChange={(e) => setFormData({ ...formData, horaInicio: e.target.value })}
+              className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
           </div>
-        </form>
+        </div>
+
+        {/* Botão de confirmação */}
+        <div className="flex justify-end pt-2">
+          <button
+            type="submit"
+            disabled={confirmarMutation.isPending}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-green-600 text-white rounded hover:bg-green-700 transition disabled:opacity-50"
+          >
+            <CheckCircle className="w-4 h-4" />
+            {confirmarMutation.isPending ? 'Confirmando...' : 'Confirmar'}
+          </button>
+        </div>
       </div>
-    </div>
+    </form>
   );
 }
