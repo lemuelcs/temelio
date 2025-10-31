@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Temelio</string>
+
+    <!-- Login -->
+    <string name="login_title">Bem-vindo ao Temelio</string>
+    <string name="email">E-mail</string>
+    <string name="password">Senha</string>
+    <string name="login">Entrar</string>
+    <string name="forgot_password">Esqueci minha senha</string>
+    <string name="login_error">Erro ao fazer login. Verifique suas credenciais.</string>
+
+    <!-- Dashboard -->
+    <string name="dashboard">Dashboard</string>
+    <string name="welcome">Olá, %s!</string>
+    <string name="total_routes">Rotas Realizadas</string>
+    <string name="earnings">Ganhos</string>
+    <string name="rating">Pontuação</string>
+    <string name="level">Nível</string>
+
+    <!-- Ofertas -->
+    <string name="offers">Ofertas</string>
+    <string name="pending_offers">Ofertas Pendentes</string>
+    <string name="accept">Aceitar</string>
+    <string name="reject">Recusar</string>
+    <string name="no_offers">Nenhuma oferta disponível no momento</string>
+    <string name="offer_accepted">Oferta aceita com sucesso!</string>
+    <string name="offer_rejected">Oferta recusada</string>
+
+    <!-- Rotas -->
+    <string name="routes">Rotas</string>
+    <string name="my_routes">Minhas Rotas</string>
+    <string name="route_details">Detalhes da Rota</string>
+    <string name="start_route">Iniciar Rota</string>
+    <string name="finish_route">Finalizar Rota</string>
+    <string name="route_status_waiting">Aguardando</string>
+    <string name="route_status_on_way">A Caminho</string>
+    <string name="route_status_at_location">No Local</string>
+    <string name="route_status_started">Rota Iniciada</string>
+    <string name="route_status_completed">Concluída</string>
+
+    <!-- Disponibilidade -->
+    <string name="availability">Disponibilidade</string>
+    <string name="my_availability">Minha Disponibilidade</string>
+    <string name="save_availability">Salvar Disponibilidade</string>
+    <string name="availability_saved">Disponibilidade salva com sucesso!</string>
+    <string name="current_week">Semana Atual</string>
+    <string name="next_week">Próxima Semana</string>
+
+    <!-- Perfil -->
+    <string name="profile">Perfil</string>
+    <string name="my_profile">Meu Perfil</string>
+    <string name="personal_data">Dados Pessoais</string>
+    <string name="vehicle_data">Dados do Veículo</string>
+    <string name="documents">Documentos</string>
+    <string name="logout">Sair</string>
+
+    <!-- Geral -->
+    <string name="loading">Carregando...</string>
+    <string name="error">Erro</string>
+    <string name="retry">Tentar novamente</string>
+    <string name="save">Salvar</string>
+    <string name="cancel">Cancelar</string>
+    <string name="confirm">Confirmar</string>
+    <string name="yes">Sim</string>
+    <string name="no">Não</string>
+    <string name="ok">OK</string>
+
+    <!-- Navegação -->
+    <string name="nav_dashboard">Início</string>
+    <string name="nav_offers">Ofertas</string>
+    <string name="nav_routes">Rotas</string>
+    <string name="nav_availability">Disponibilidade</string>
+    <string name="nav_profile">Perfil</string>
+
+    <!-- Erros -->
+    <string name="error_network">Erro de conexão. Verifique sua internet.</string>
+    <string name="error_server">Erro no servidor. Tente novamente mais tarde.</string>
+    <string name="error_unknown">Erro desconhecido. Tente novamente.</string>
+
+    <!-- Permissões -->
+    <string name="permission_location_title">Permissão de Localização</string>
+    <string name="permission_location_message">O Temelio precisa acessar sua localização para rastrear rotas e ofertas próximas.</string>
+    <string name="permission_notification_title">Permissão de Notificações</string>
+    <string name="permission_notification_message">O Temelio precisa enviar notificações para alertá-lo sobre novas ofertas de rotas.</string>
+    <string name="permission_denied">Permissão negada</string>
+
+    <!-- Maps -->
+    <string name="map_error">Erro ao carregar mapa</string>
+    <string name="current_location">Localização Atual</string>
+</resources>
