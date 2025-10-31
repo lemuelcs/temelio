@@ -16,6 +16,7 @@ router.use(authorize('ADMINISTRADOR', 'DESPACHANTE_PLANEJADOR'));
 
 // CRUD de motoristas
 router.get('/', motoristaController.listar);
+router.get('/aniversariantes', motoristaController.listarAniversariantes);
 router.get('/import/template', motoristaController.baixarModeloImportacao);
 router.post('/import', upload.single('file'), motoristaController.importarCsv);
 router.post('/', motoristaController.criar);

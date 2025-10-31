@@ -1,7 +1,7 @@
 import { useMemo, useState, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { AxiosError } from 'axios';
-import { AlertTriangle, Calendar, Car, CheckCircle, FileText, FileWarning, RefreshCw, ShieldAlert, User, XCircle } from 'lucide-react';
+import { AlertTriangle, Calendar, Car, CheckCircle, FileText, FileWarning, RefreshCw, ShieldAlert, User, XCircle, Cake, ExternalLink } from 'lucide-react';
 import api from '../../services/api';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -142,6 +142,17 @@ export default function Alertas() {
       const response = await api.get('/alertas', { params: { resolvido: false } });
       const dados = response.data?.data?.alertas || response.data?.alertas || [];
       return Array.isArray(dados) ? dados : [];
+    },
+  });
+
+  const {
+    data: aniversariantes,
+    isLoading: loadingAniversariantes,
+  } = useQuery({
+    queryKey: ['aniversariantes'],
+    queryFn: async () => {
+      const response = await api.get('/motoristas/aniversariantes');
+      return response.data?.data;
     },
   });
 
@@ -348,6 +359,55 @@ export default function Alertas() {
         <h1 className="text-2xl font-bold text-gray-900">Alertas de Compliance</h1>
         <p className="text-gray-600 mt-1">Acompanhe pendências de documentos e elegibilidade</p>
       </div>
+
+      {/* Box de Aniversariantes */}
+      {!loadingAniversariantes && aniversariantes && (aniversariantes.totalDia > 0 || aniversariantes.totalSemana > 0) && (
+        <div
+          className="bg-gradient-to-r from-yellow-50 to-orange-50 rounded-lg shadow-md p-6 border-l-4 border-yellow-400 cursor-pointer hover:shadow-lg transition-shadow"
+          onClick={() => navigate('/alertas/aniversariantes')}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              navigate('/alertas/aniversariantes');
+            }
+          }}
+        >
+          <div className="flex items-start justify-between">
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-3">
+                <Cake className="w-6 h-6 text-yellow-600" />
+                <h2 className="text-lg font-semibold text-gray-900">Aniversariantes</h2>
+              </div>
+
+              <div className="flex items-center gap-6">
+                <div>
+                  <p className="text-3xl font-bold text-yellow-600">{aniversariantes.totalDia}</p>
+                  <p className="text-sm text-gray-600 mt-1">Hoje</p>
+                </div>
+
+                <div className="h-12 w-px bg-gray-300"></div>
+
+                <div>
+                  <p className="text-2xl font-semibold text-orange-600">{aniversariantes.totalSemana}</p>
+                  <p className="text-sm text-gray-600 mt-1">Esta semana</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="ml-4 flex items-center">
+              <ExternalLink className="w-5 h-5 text-gray-400" />
+            </div>
+          </div>
+
+          <div className="mt-4 pt-4 border-t border-gray-200">
+            <p className="text-sm text-gray-600 flex items-center gap-2">
+              <span>Clique para ver a lista completa e enviar felicitações pelo WhatsApp</span>
+            </p>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {alertTiles.map((tile) => {
