@@ -257,32 +257,37 @@ export default function RotasMotorista() {
     if (!horaInicio) return '';
 
     const formatoHorarioSimples = /^(\d{2}):(\d{2})/;
-    let referencia: Date | null = null;
+    let minutosTotal = 0;
 
     const correspondenciaSimples = formatoHorarioSimples.exec(horaInicio);
     if (correspondenciaSimples) {
       const hora = Number(correspondenciaSimples[1]);
       const minuto = Number(correspondenciaSimples[2]);
-      referencia = new Date();
-      referencia.setHours(hora, minuto, 0, 0);
+      minutosTotal = hora * 60 + minuto;
     } else {
       const parsed = new Date(horaInicio);
       if (!Number.isNaN(parsed.getTime())) {
-        referencia = parsed;
+        minutosTotal = parsed.getUTCHours() * 60 + parsed.getUTCMinutes();
       }
     }
 
-    if (!referencia) return '';
+    if (minutosTotal === 0) return '';
 
-    const dataColeta = new Date(referencia.getTime() - 45 * 60 * 1000);
-    return dataColeta.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    // Subtrair 45 minutos
+    minutosTotal -= 45;
+    if (minutosTotal < 0) minutosTotal += 24 * 60; // Ajuste para dia anterior
+
+    const horaColeta = Math.floor(minutosTotal / 60);
+    const minutoColeta = minutosTotal % 60;
+
+    return `${String(horaColeta).padStart(2, '0')}:${String(minutoColeta).padStart(2, '0')}`;
   };
 
   const formatHoraRota = (valor?: string | null) => {
     if (!valor) return '';
     const parsed = new Date(valor);
     if (!Number.isNaN(parsed.getTime())) {
-      return parsed.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+      return parsed.toISOString().substring(11, 16);
     }
 
     if (typeof valor === 'string' && valor.includes(':')) {
