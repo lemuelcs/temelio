@@ -358,14 +358,17 @@ class DisponibilidadeController {
         });
       }
 
-      const resumo = await disponibilidadeService.buscarResumo(
+      const resultado = await disponibilidadeService.buscarResumo(
         new Date(dataInicio as string),
         new Date(dataFim as string)
       );
 
       res.json({
         success: true,
-        data: { resumo }
+        data: {
+          resumo: resultado.resumo,
+          totalMotoristas: resultado.totalMotoristas
+        }
       });
     } catch (error) {
       next(error);

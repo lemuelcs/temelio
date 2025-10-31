@@ -18,6 +18,7 @@ interface ResumoData {
     [CicloRota.SAME_DAY]: ResumoCiclo;
   };
   totalGeral: number[];
+  totalMotoristas: number;
 }
 
 interface MotoristaDisponivel {
@@ -55,7 +56,7 @@ export function useResumoDisponibilidade(dataInicio: string, dataFim: string) {
       const response = await api.get('/gestao/disponibilidades/resumo', {
         params: { dataInicio, dataFim }
       });
-      return response.data.data.resumo;
+      return response.data.data;
     },
     enabled: !!dataInicio && !!dataFim
   });
@@ -114,11 +115,12 @@ export function useResumoDisponibilidade(dataInicio: string, dataFim: string) {
         [CicloRota.CICLO_2]: criarResumoCiclo(),
         [CicloRota.SAME_DAY]: criarResumoCiclo()
       },
-      totalGeral: criarLinhaBase()
+      totalGeral: criarLinhaBase(),
+      totalMotoristas: resumoRaw.totalMotoristas || 0
     };
 
     // Preencher dados
-    Object.entries(resumoRaw).forEach(([dataStr, tiposVeiculo]: [string, any]) => {
+    Object.entries(resumoRaw.resumo || {}).forEach(([dataStr, tiposVeiculo]: [string, any]) => {
       const diaIndex = datas.indexOf(dataStr);
       if (diaIndex === -1) return;
 
