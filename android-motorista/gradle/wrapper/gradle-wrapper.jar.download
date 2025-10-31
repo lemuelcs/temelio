@@ -1,0 +1,4 @@
+# Este arquivo precisa ser baixado do repositório oficial do Gradle
+# Execute: ./gradlew wrapper --gradle-version 8.2
+# Ou baixe de: https://github.com/gradle/gradle/raw/master/gradle/wrapper/gradle-wrapper.jar
+# O arquivo será criado automaticamente na primeira execução do Gradle
