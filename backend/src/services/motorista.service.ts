@@ -198,7 +198,7 @@ class MotoristaService {
 
         // Criar documentos se fornecidos
         ...(numeroCNH || validadeCNH || anoLicenciamento || dataVerificacaoBRK || proximaVerificacaoBRK || statusBRK !== undefined ? {
-          documentos: {
+          documento: {
             create: {
               numeroCNH: numeroCNH || null,
               validadeCNH: validadeCNH || null,
