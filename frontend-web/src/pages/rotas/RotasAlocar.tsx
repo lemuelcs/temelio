@@ -260,15 +260,16 @@ export default function RotasAlocacao() {
   // Enviar ofertas de rotas
   const enviarOfertasMutation = useMutation({
     mutationFn: async (alocacoes: Alocacao[]) => {
-      // Enviar cada alocação para o backend
-      const promises = alocacoes.map(async (alocacao) => {
-        return api.post('/ofertas-rotas', {
+      // Enviar cada alocação sequencialmente para evitar conflitos de transação
+      const resultados = [];
+      for (const alocacao of alocacoes) {
+        const resultado = await api.post('/ofertas-rotas', {
           rotaId: alocacao.rotaId,
           motoristaId: alocacao.motoristaId,
         });
-      });
-
-      return Promise.all(promises);
+        resultados.push(resultado);
+      }
+      return resultados;
     },
     onSuccess: () => {
       alert('Ofertas enviadas com sucesso aos motoristas!');
