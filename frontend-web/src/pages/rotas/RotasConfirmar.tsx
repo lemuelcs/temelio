@@ -77,7 +77,16 @@ export default function RotasConfirmar() {
 
   const formatTime = (timeString: string) => {
     if (!timeString) return '';
-    return timeString.substring(0, 5);
+    const parsed = new Date(timeString);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed.toISOString().substring(11, 16);
+    }
+
+    if (typeof timeString === 'string' && timeString.includes(':')) {
+      return timeString.substring(0, 5);
+    }
+
+    return '';
   };
 
   const formatSelectedDate = (value: string) => {
