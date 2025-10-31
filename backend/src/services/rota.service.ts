@@ -470,6 +470,11 @@ class RotaService {
               }
             }
           }
+        },
+        historicosTracking: {
+          orderBy: {
+            createdAt: 'asc'
+          }
         }
       },
       orderBy: [

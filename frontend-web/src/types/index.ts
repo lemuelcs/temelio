@@ -41,6 +41,7 @@ export interface Motorista {
   cpf: string;
   email: string;
   telefone: string;
+  celular?: string;
   dataNascimento: string;
   tipoVeiculo: TipoVeiculo;
   veiculoProprio: boolean;
@@ -55,6 +56,20 @@ export interface Motorista {
   statusAtivacao: StatusAtivacao;
   createdAt: string;
   updatedAt: string;
+}
+
+// Interface de Historico Tracking Rota
+export interface HistoricoTrackingRota {
+  id: string;
+  rotaId: string;
+  motoristaId: string;
+  status: StatusTrackingMotorista;
+  latitude?: number;
+  longitude?: number;
+  dispositivo?: string;
+  ip?: string;
+  observacao?: string;
+  createdAt: string;
 }
 
 // Interface de Rota
@@ -85,7 +100,6 @@ export interface Rota {
   valorProjetado?: number;
   valorTotalRota?: number;
   cicloRota?: 'CICLO_1' | 'CICLO_2' | 'SAME_DAY' | 'SEM_CICLO' | string;
-  tipoVeiculoNecessario?: TipoVeiculo;
   tipoVeiculo?: TipoVeiculo;
   local?: Local;
   qtdeParadas?: number;
@@ -96,6 +110,7 @@ export interface Rota {
   timestampNoLocal?: string;
   timestampRotaIniciada?: string;
   timestampRotaConcluida?: string;
+  historicosTracking?: HistoricoTrackingRota[];
 }
 
 // Interface de Oferta de Rota
@@ -217,9 +232,9 @@ export type TabelaPrecoFormData = Omit<TabelaPreco, 'id' | 'createdAt' | 'update
 // Labels amigáveis
 export const TipoVeiculoLabels: Record<TipoVeiculo, string> = {
   MOTOCICLETA: 'Motocicleta',
-  CARRO_PASSEIO: 'Carro de Passeio',
-  CARGO_VAN: 'Van Carga',
-  LARGE_VAN: 'Van Grande',
+  CARRO_PASSEIO: 'Carro Passeio',
+  CARGO_VAN: 'Cargo Van',
+  LARGE_VAN: 'Large Van',
 };
 
 export const TurnoLabels: Record<Turno, string> = {
